@@ -1,0 +1,33 @@
+# BYU 590R Monorepo .gitignore
+
+# Server configuration files (contain instance-specific data)
+devops/.server-config
+devops/.aws-config
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+*.tmp
+*.temp
+
+# Environment files (if any)
+.env.local
+.env.*.local
