@@ -157,6 +157,38 @@ create_ec2_instance() {
     EC2_HOST="$ELASTIC_IP"
     echo "EC2_HOST=$EC2_HOST" >> .server-config
     
+    # Configure security group to allow HTTP, HTTPS, SSH, and custom ports
+    log_info "Configuring security group..."
+    aws ec2 authorize-security-group-ingress \
+        --group-id "$SECURITY_GROUP" \
+        --protocol tcp \
+        --port 22 \
+        --cidr 0.0.0.0/0 2>/dev/null || log_info "SSH rule already exists"
+    
+    aws ec2 authorize-security-group-ingress \
+        --group-id "$SECURITY_GROUP" \
+        --protocol tcp \
+        --port 80 \
+        --cidr 0.0.0.0/0 2>/dev/null || log_info "HTTP rule already exists"
+    
+    aws ec2 authorize-security-group-ingress \
+        --group-id "$SECURITY_GROUP" \
+        --protocol tcp \
+        --port 443 \
+        --cidr 0.0.0.0/0 2>/dev/null || log_info "HTTPS rule already exists"
+    
+    aws ec2 authorize-security-group-ingress \
+        --group-id "$SECURITY_GROUP" \
+        --protocol tcp \
+        --port 4444 \
+        --cidr 0.0.0.0/0 2>/dev/null || log_info "Backend port 4444 rule already exists"
+    
+    aws ec2 authorize-security-group-ingress \
+        --group-id "$SECURITY_GROUP" \
+        --protocol tcp \
+        --port 8888 \
+        --cidr 0.0.0.0/0 2>/dev/null || log_info "Frontend port 8888 rule already exists"
+    
     log_success "EC2 instance created: $INSTANCE_ID with Elastic IP: $ELASTIC_IP"
 }
 
@@ -220,14 +252,11 @@ MYSQL_EOF
 sudo a2enmod rewrite
 sudo a2enmod headers
 
-# Create main virtual host with path-based routing
-sudo tee /etc/apache2/sites-available/byu-590r.conf > /dev/null << 'APACHE_MAIN_EOF'
-<VirtualHost *:80>
+    # Create virtual hosts with port-based routing
+    sudo tee /etc/apache2/sites-available/byu-590r-backend.conf > /dev/null << 'APACHE_BACKEND_EOF'
+<VirtualHost *:4444>
     ServerName localhost
-    DocumentRoot /var/www/html
-    
-    # API routing - Laravel backend
-    Alias /api /var/www/html/api/public
+    DocumentRoot /var/www/html/api/public
     
     <Directory /var/www/html/api/public>
         AllowOverride All
@@ -238,10 +267,20 @@ sudo tee /etc/apache2/sites-available/byu-590r.conf > /dev/null << 'APACHE_MAIN_
         RewriteCond %{REQUEST_FILENAME} !-f
         RewriteCond %{REQUEST_FILENAME} !-d
         RewriteRule ^(.*)$ index.php [QSA,L]
+        
+        # Set index files
+        DirectoryIndex index.php index.html
     </Directory>
     
-    # App routing - Angular frontend (point to browser folder)
-    Alias /app /var/www/html/app/browser
+    ErrorLog ${APACHE_LOG_DIR}/byu590r_backend_error.log
+    CustomLog ${APACHE_LOG_DIR}/byu590r_backend_access.log combined
+</VirtualHost>
+APACHE_BACKEND_EOF
+
+    sudo tee /etc/apache2/sites-available/byu-590r-frontend.conf > /dev/null << 'APACHE_FRONTEND_EOF'
+<VirtualHost *:8888>
+    ServerName localhost
+    DocumentRoot /var/www/html/app/browser
     
     <Directory /var/www/html/app/browser>
         AllowOverride All
@@ -249,31 +288,50 @@ sudo tee /etc/apache2/sites-available/byu-590r.conf > /dev/null << 'APACHE_MAIN_
         
         # Angular routing support
         RewriteEngine On
-        RewriteBase /app
         RewriteRule ^index\.html$ - [L]
         RewriteCond %{REQUEST_FILENAME} !-f
         RewriteCond %{REQUEST_FILENAME} !-d
-        RewriteRule . /app/index.html [L]
+        RewriteRule . /index.html [L]
+        
+        # Set index files
+        DirectoryIndex index.html
     </Directory>
     
-    # Default root - redirect to app
+    ErrorLog ${APACHE_LOG_DIR}/byu590r_frontend_error.log
+    CustomLog ${APACHE_LOG_DIR}/byu590r_frontend_access.log combined
+</VirtualHost>
+APACHE_FRONTEND_EOF
+
+    sudo tee /etc/apache2/sites-available/byu-590r-main.conf > /dev/null << 'APACHE_MAIN_EOF'
+<VirtualHost *:80>
+    ServerName localhost
+    DocumentRoot /var/www/html
+    
+    # Default root - redirect to frontend
     <Directory /var/www/html>
         AllowOverride All
         Require all granted
         
         RewriteEngine On
-        RewriteRule ^$ /app/ [R=301,L]
+        RewriteRule ^$ http://localhost:8888/ [R=301,L]
     </Directory>
     
-    ErrorLog ${APACHE_LOG_DIR}/byu590r_error.log
-    CustomLog ${APACHE_LOG_DIR}/byu590r_access.log combined
+    ErrorLog ${APACHE_LOG_DIR}/byu590r_main_error.log
+    CustomLog ${APACHE_LOG_DIR}/byu590r_main_access.log combined
 </VirtualHost>
 APACHE_MAIN_EOF
 
-# Enable site and disable default
-sudo a2ensite byu-590r.conf
-sudo a2dissite 000-default
-sudo systemctl reload apache2
+    # Enable sites and disable default
+    sudo a2ensite byu-590r-backend.conf
+    sudo a2ensite byu-590r-frontend.conf
+    sudo a2ensite byu-590r-main.conf
+    sudo a2dissite 000-default
+    
+    # Add ports to Apache configuration
+    echo "Listen 4444" | sudo tee -a /etc/apache2/ports.conf
+    echo "Listen 8888" | sudo tee -a /etc/apache2/ports.conf
+    
+    sudo systemctl reload apache2
 
 # Set proper permissions for Laravel
 sudo chown -R www-data:www-data /var/www/html/api
@@ -340,8 +398,8 @@ main() {
     echo "  6. Once secrets are updated, push changes to main branch to trigger deployment"
     echo ""
     echo "  🚀 Your application will be available at:"
-    echo "     Frontend: http://$EC2_HOST/app"
-    echo "     Backend API: http://$EC2_HOST/api/hello"
+    echo "     Frontend: http://$EC2_HOST:8888"
+    echo "     Backend API: http://$EC2_HOST:4444/api/hello"
     echo ""
     log_info "Configuration saved to: .server-config"
 }
