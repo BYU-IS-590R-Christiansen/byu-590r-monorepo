@@ -202,6 +202,14 @@ setup-backend-ec2:
 	fi
 	@echo "Generating application key..."
 	cd backend && php artisan key:generate --force
+	@echo "Setting proper permissions..."
+	sudo chown -R www-data:www-data backend
+	sudo chmod -R 755 backend
+	sudo chmod -R 775 backend/storage
+	sudo chmod -R 775 backend/bootstrap/cache
+	sudo chmod -R 775 backend/storage/logs
+	sudo chmod -R 775 backend/storage/framework
+	sudo chmod -R 775 backend/storage/app
 	@echo "Laravel backend setup complete!"
 
 # Run migrations on EC2

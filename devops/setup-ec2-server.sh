@@ -339,6 +339,11 @@ sudo chmod -R 755 /var/www/html/api
 sudo chmod -R 775 /var/www/html/api/storage
 sudo chmod -R 775 /var/www/html/api/bootstrap/cache
 
+# Ensure Laravel can write to all necessary directories
+sudo chmod -R 775 /var/www/html/api/storage/logs
+sudo chmod -R 775 /var/www/html/api/storage/framework
+sudo chmod -R 775 /var/www/html/api/storage/app
+
 # Create .env file if it doesn't exist
 if [ ! -f /var/www/html/api/.env ]; then
     sudo cp /var/www/html/api/.env.example /var/www/html/api/.env

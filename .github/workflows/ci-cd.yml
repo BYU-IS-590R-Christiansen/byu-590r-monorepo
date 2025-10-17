@@ -154,6 +154,11 @@ jobs:
             sudo chmod -R 775 /var/www/html/api/storage
             sudo chmod -R 775 /var/www/html/api/bootstrap/cache
             
+            # Ensure Laravel can write to all necessary directories
+            sudo chmod -R 775 /var/www/html/api/storage/logs
+            sudo chmod -R 775 /var/www/html/api/storage/framework
+            sudo chmod -R 775 /var/www/html/api/storage/app
+            
             # Restart Apache
             sudo systemctl reload apache2
           EOF
