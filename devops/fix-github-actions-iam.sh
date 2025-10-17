@@ -73,7 +73,7 @@ create_ecr_policy() {
                 "ecr:UploadLayerPart",
                 "ecr:CompleteLayerUpload"
             ],
-            "Resource": "arn:aws:ecr:*:${ACCOUNT_ID}:repository/byu-590r-*"
+            "Resource": "arn:aws:ecr:us-west-1:${ACCOUNT_ID}:repository/byu-590r-*"
         },
         {
             "Effect": "Allow",
@@ -81,7 +81,7 @@ create_ecr_policy() {
                 "ecr:CreateRepository",
                 "ecr:DescribeRepositories"
             ],
-            "Resource": "arn:aws:ecr:*:${ACCOUNT_ID}:repository/byu-590r-*"
+            "Resource": "arn:aws:ecr:us-west-1:${ACCOUNT_ID}:repository/byu-590r-*"
         }
     ]
 }
@@ -130,8 +130,8 @@ attach_policy_to_user() {
 create_ecr_repositories() {
     log_info "Creating ECR repositories if they don't exist..."
     
-    # Get AWS region (default to us-east-1)
-    AWS_REGION=${AWS_REGION:-us-east-1}
+    # Get AWS region (default to us-west-1)
+    AWS_REGION=${AWS_REGION:-us-west-1}
     
     # Create backend repository
     aws ecr create-repository \
