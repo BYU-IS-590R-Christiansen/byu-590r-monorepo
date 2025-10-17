@@ -26,7 +26,7 @@ jobs:
           cd web-app
           npm --version
           node --version
-          npm ci
+          npm install
 
       - name: Run Angular tests
         run: |
