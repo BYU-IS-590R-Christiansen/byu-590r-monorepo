@@ -180,6 +180,43 @@ aws-setup:
 setup_infrastructure: aws-setup
 	@echo "Infrastructure setup complete!"
 
+# Deploy to EC2 (for GitHub Actions)
+deploy-ec2:
+	@echo "Deploying BYU 590R Monorepo to EC2..."
+	@echo "Setting up Laravel backend..."
+	@$(MAKE) setup-backend-ec2
+	@echo "Installing Laravel dependencies..."
+	cd backend && composer install --no-dev --optimize-autoloader
+	@echo "Running database migrations..."
+	@$(MAKE) migrate-ec2
+	@echo "Building Angular frontend..."
+	@$(MAKE) build-frontend-prod
+	@echo "EC2 deployment complete!"
+
+# Setup Laravel backend for EC2
+setup-backend-ec2:
+	@echo "Setting up Laravel backend for EC2..."
+	@if [ ! -f backend/.env ]; then \
+		echo "Creating .env file from .env.example..."; \
+		cp backend/.env.example backend/.env; \
+	fi
+	@echo "Generating application key..."
+	cd backend && php artisan key:generate --force
+	@echo "Laravel backend setup complete!"
+
+# Run migrations on EC2
+migrate-ec2:
+	@echo "Running database migrations on EC2..."
+	cd backend && php artisan migrate:fresh --seed
+	@echo "Database migrations complete!"
+
+# Build frontend for production
+build-frontend-prod:
+	@echo "Building Angular frontend for production..."
+	cd web-app && npm install
+	cd web-app && npm run build:prod
+	@echo "Frontend build complete!"
+
 aws-teardown:
 	@echo "Tearing down AWS environment..."
 	cd devops && ./teardown.sh
@@ -250,6 +287,10 @@ help:
 	@echo "  build-backend  - Build Laravel backend only"
 	@echo "  setup-backend - Setup Laravel backend (.env, key generation)"
 	@echo "  migrate      - Run database migrations"
+	@echo "  deploy-ec2   - Deploy to EC2 (for GitHub Actions)"
+	@echo "  setup-backend-ec2 - Setup Laravel backend for EC2"
+	@echo "  migrate-ec2  - Run database migrations on EC2"
+	@echo "  build-frontend-prod - Build Angular frontend for production"
 	@echo "  build-images - Build Docker images for backend and frontend"
 	@echo "  setup_infrastructure - Set up AWS EC2 server infrastructure"
 	@echo "  aws-setup    - Set up AWS EC2 server (GitHub Actions deploys apps)"

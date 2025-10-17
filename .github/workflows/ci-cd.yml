@@ -103,30 +103,17 @@ jobs:
             sudo mkdir -p /var/www/html/api
             sudo chown -R ubuntu:ubuntu /var/www/html/api
           EOF
-
+          
           # Copy backend files to EC2
           rsync -avz --delete -e "ssh -o StrictHostKeyChecking=no" \
             backend/ ubuntu@${{ secrets.EC2_HOST }}:/var/www/html/api/
-
-          # Install dependencies and configure Laravel
+          
+          # Use make deploy-ec2 for backend setup
           ssh -o StrictHostKeyChecking=no ubuntu@${{ secrets.EC2_HOST }} << 'EOF'
             cd /var/www/html/api
             
             # Set proper ownership for configuration
             sudo chown -R ubuntu:ubuntu /var/www/html/api
-            
-            # Install dependencies
-            composer install --no-dev --optimize-autoloader
-            
-            # Create .env file if it doesn't exist
-            if [ ! -f .env ]; then
-              cp .env.example .env
-            fi
-            
-            # Generate application key if not set
-            if ! grep -q "APP_KEY=base64:" .env; then
-              php artisan key:generate
-            fi
             
             # Update .env with GitHub secrets if provided
             if [ -n "${{ secrets.DB_PASSWORD }}" ]; then
@@ -145,6 +132,11 @@ jobs:
             sed -i "s/APP_ENV=.*/APP_ENV=production/" .env
             sed -i "s/APP_DEBUG=.*/APP_DEBUG=false/" .env
             
+            # Use make commands for deployment
+            make setup-backend-ec2
+            composer install --no-dev --optimize-autoloader
+            make migrate-ec2
+            
             # Configure Laravel for production
             php artisan config:cache
             php artisan route:cache
@@ -160,44 +152,21 @@ jobs:
             sudo systemctl reload apache2
           EOF
 
-      - name: Run Database Migrations
-        run: |
-          # Run Laravel migrations and seeders
-          ssh -o StrictHostKeyChecking=no ubuntu@${{ secrets.EC2_HOST }} << 'EOF'
-            cd /var/www/html/api
-            
-            # Set proper ownership for migration
-            sudo chown -R ubuntu:ubuntu /var/www/html/api
-            
-            # Run fresh migrations with seeders
-            php artisan migrate:fresh --seed
-            
-            # Set proper permissions back to Apache
-            sudo chown -R www-data:www-data /var/www/html/api
-            sudo chmod -R 755 /var/www/html/api
-            sudo chmod -R 775 /var/www/html/api/storage
-            sudo chmod -R 775 /var/www/html/api/bootstrap/cache
-            
-            echo "Database migrations completed successfully!"
-          EOF
-
       - name: Deploy Frontend to EC2
         run: |
-          # Build Angular app locally
-          cd web-app
-          npm install
-          npm run build:prod
-
+          # Build Angular app locally using make
+          make build-frontend-prod
+          
           # Create app directory and set permissions
           ssh -o StrictHostKeyChecking=no ubuntu@${{ secrets.EC2_HOST }} << 'EOF'
             sudo mkdir -p /var/www/html/app
             sudo chown -R ubuntu:ubuntu /var/www/html/app
           EOF
-
+          
           # Copy built files to EC2
           rsync -avz --delete -e "ssh -o StrictHostKeyChecking=no" \
-            dist/byu-590r-builder/ ubuntu@${{ secrets.EC2_HOST }}:/var/www/html/app/
-
+            web-app/dist/byu-590r-builder/ ubuntu@${{ secrets.EC2_HOST }}:/var/www/html/app/
+          
           # Set proper permissions and restart Apache
           ssh -o StrictHostKeyChecking=no ubuntu@${{ secrets.EC2_HOST }} << 'EOF'
             sudo chown -R www-data:www-data /var/www/html/app
