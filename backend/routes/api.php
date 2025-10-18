@@ -11,3 +11,4 @@ Route::get('/user', function (Request $request) {
 // Hello World API routes
 Route::get('/hello', [HelloWorldController::class, 'hello']);
 Route::get('/health', [HelloWorldController::class, 'health']);
+Route::get('/test-s3', [HelloWorldController::class, 'testS3']);

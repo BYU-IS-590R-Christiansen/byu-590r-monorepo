@@ -105,6 +105,26 @@ jobs:
             sed -i "s/OPENAI_API_KEY=.*/OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}/" .env
           fi
 
+          # Add S3_BUCKET from secrets if provided
+          if [ -n "${{ secrets.S3_BUCKET }}" ]; then
+            sed -i "s/S3_BUCKET=.*/S3_BUCKET=${{ secrets.S3_BUCKET }}/" .env
+          else
+            echo "S3_BUCKET=byu-590r-$(date +%s)-test" >> .env
+          fi
+
+          # Add AWS credentials for S3 testing
+          if [ -n "${{ secrets.AWS_ACCESS_KEY_ID }}" ]; then
+            echo "AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID }}" >> .env
+          fi
+          if [ -n "${{ secrets.AWS_SECRET_ACCESS_KEY }}" ]; then
+            echo "AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }}" >> .env
+          fi
+          if [ -n "${{ secrets.AWS_REGION }}" ]; then
+            echo "AWS_DEFAULT_REGION=${{ secrets.AWS_REGION }}" >> .env
+          else
+            echo "AWS_DEFAULT_REGION=us-west-1" >> .env
+          fi
+
       - name: Run Laravel tests
         run: |
           cd backend
@@ -181,6 +201,13 @@ jobs:
             # Update OPENAI_API_KEY from GitHub secrets if provided
             if [ -n "${{ secrets.OPENAI_API_KEY }}" ]; then
               sed -i "s/OPENAI_API_KEY=.*/OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}/" .env
+            fi
+            
+            # Update S3_BUCKET from GitHub secrets if provided
+            if [ -n "${{ secrets.S3_BUCKET }}" ]; then
+              sed -i "s/S3_BUCKET=.*/S3_BUCKET=${{ secrets.S3_BUCKET }}/" .env
+            else
+              echo "S3_BUCKET=byu-590r-$(date +%s)-prod" >> .env
             fi
             
             # Set APP_ENV to production for deployment

@@ -26,9 +26,10 @@ chmod +x setup-ec2-server.sh
 
 ### 2. Configure GitHub Actions
 
-Add these secrets to your GitHub repository:
+**Copy the generated values from the setup script output** and add these secrets to your GitHub repository:
 
-- `EC2_HOST`: Your EC2 public IP address for deployment
+- `EC2_HOST`: Your EC2 public IP address (from setup script output)
+- `S3_BUCKET`: Your unique S3 bucket name (from setup script output)
 - `EC2_SSH_PRIVATE_KEY`: Contents of your SSH private key for server access
 - `DB_DATABASE`: Database name for the Laravel application
 - `DB_USERNAME`: Database username for MySQL connection
@@ -69,6 +70,25 @@ Add these secrets to your GitHub repository:
    				"ec2:DescribeTags"
    			],
    			"Resource": "*"
+   		},
+   		{
+   			"Effect": "Allow",
+   			"Action": [
+   				"s3:CreateBucket",
+   				"s3:DeleteBucket",
+   				"s3:ListBucket",
+   				"s3:GetBucketLocation",
+   				"s3:GetBucketAcl",
+   				"s3:PutBucketAcl",
+   				"s3:PutBucketPublicAccessBlock",
+   				"s3:GetBucketPublicAccessBlock",
+   				"s3:PutObject",
+   				"s3:GetObject",
+   				"s3:DeleteObject",
+   				"s3:PutObjectAcl",
+   				"s3:GetObjectAcl"
+   			],
+   			"Resource": ["arn:aws:s3:::byu-590r-*", "arn:aws:s3:::byu-590r-*/*"]
    		}
    	]
    }
@@ -90,6 +110,7 @@ Add these secrets to your GitHub repository:
 5. **Add to GitHub Secrets**:
    - Repository → Settings → Secrets and variables → Actions
    - Add `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` from CSV file
+   - **Important**: Also add `EC2_HOST` and `S3_BUCKET` values from setup script output
 
 #### OpenAI API Setup (Optional)
 
@@ -131,6 +152,8 @@ Push to `main` branch - GitHub Actions will auto-deploy.
 
 - **Frontend**: `http://YOUR_EC2_IP`
 - **Backend API**: `http://YOUR_EC2_IP:4444/api/hello`
+- **Health Check**: `http://YOUR_EC2_IP:4444/api/health`
+- **S3 Test**: `http://YOUR_EC2_IP:4444/api/test-s3`
 
 ### 5. Cleanup
 
@@ -171,4 +194,4 @@ cd devops
 
 ## Credits
 
-This project was created for BYU IS 590R - John Christiansen
+This project was created for educational purposes for BYU IS 590R course - John Christiansen. 10/2025. All Rights Reserved

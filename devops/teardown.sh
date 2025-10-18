@@ -29,37 +29,105 @@ log_error() {
     echo -e "${RED}[ERROR]${NC} $1"
 }
 
-# Check if config file exists
+# Check if config file exists or find project resources
 check_config() {
-    if [ ! -f ".server-config" ]; then
-        log_error "Configuration file .server-config not found"
-        log_error "Please run setup-ec2-server.sh first or check if you're in the correct directory"
-        exit 1
-    fi
-    
-    # Load configuration
-    source .server-config
-    
-    log_info "Loaded configuration:"
-    echo "  Instance ID: $INSTANCE_ID"
-    echo "  Instance IP: $INSTANCE_IP"
-    if [ -n "$ALLOCATION_ID" ]; then
-        echo "  Allocation ID: $ALLOCATION_ID"
-    fi
-    if [ -n "$ELASTIC_IP" ]; then
-        echo "  Elastic IP: $ELASTIC_IP"
+    if [ -f ".server-config" ]; then
+        # Load configuration from file
+        source .server-config
+        
+        log_info "Loaded configuration from .server-config:"
+        echo "  Instance ID: $INSTANCE_ID"
+        echo "  Instance IP: $INSTANCE_IP"
+        if [ -n "$ALLOCATION_ID" ]; then
+            echo "  Allocation ID: $ALLOCATION_ID"
+        fi
+        if [ -n "$ELASTIC_IP" ]; then
+            echo "  Elastic IP: $ELASTIC_IP"
+        fi
+        if [ -n "$S3_BUCKET" ]; then
+            echo "  S3 Bucket: $S3_BUCKET"
+        fi
+    else
+        log_warning "Configuration file .server-config not found"
+        log_info "Searching for BYU 590R project resources..."
+        
+        # Find project instances
+        EXISTING_INSTANCES=$(aws ec2 describe-instances \
+            --filters "Name=tag:Name,Values=byu-590r-server" "Name=instance-state-name,Values=running,pending,stopped" \
+            --query 'Reservations[*].Instances[*].[InstanceId,PublicIpAddress,State.Name]' \
+            --output text)
+        
+        if [ -n "$EXISTING_INSTANCES" ]; then
+            log_warning "Found existing BYU 590R instances:"
+            echo "$EXISTING_INSTANCES" | while read instance_id ip state; do
+                echo "  Instance: $instance_id (IP: $ip, State: $state)"
+            done
+            
+            # Get the first instance ID for cleanup
+            INSTANCE_ID=$(echo "$EXISTING_INSTANCES" | head -n1 | awk '{print $1}')
+            INSTANCE_IP=$(echo "$EXISTING_INSTANCES" | head -n1 | awk '{print $2}')
+        else
+            log_info "No existing BYU 590R instances found"
+        fi
+        
+        # Find project S3 buckets
+        EXISTING_BUCKETS=$(aws s3api list-buckets --query 'Buckets[?starts_with(Name, `byu-590r-`)].Name' --output text)
+        
+        if [ -n "$EXISTING_BUCKETS" ]; then
+            log_warning "Found existing BYU 590R S3 buckets:"
+            for bucket in $EXISTING_BUCKETS; do
+                echo "  Bucket: $bucket"
+            done
+            
+            # Use the first bucket for cleanup
+            S3_BUCKET=$(echo "$EXISTING_BUCKETS" | awk '{print $1}')
+        else
+            log_info "No existing BYU 590R S3 buckets found"
+        fi
+        
+        # Find project Elastic IPs
+        EXISTING_EIPS=$(aws ec2 describe-addresses --filters "Name=tag:Name,Values=byu-590r" --query 'Addresses[*].[AllocationId,PublicIp]' --output text)
+        
+        if [ -n "$EXISTING_EIPS" ]; then
+            log_warning "Found existing BYU 590R Elastic IPs:"
+            echo "$EXISTING_EIPS" | while read allocation_id public_ip; do
+                echo "  Elastic IP: $public_ip (Allocation: $allocation_id)"
+            done
+            
+            # Use the first Elastic IP for cleanup
+            ALLOCATION_ID=$(echo "$EXISTING_EIPS" | head -n1 | awk '{print $1}')
+            ELASTIC_IP=$(echo "$EXISTING_EIPS" | head -n1 | awk '{print $2}')
+        else
+            log_info "No existing BYU 590R Elastic IPs found"
+        fi
     fi
 }
 
 # Confirm teardown
 confirm_teardown() {
-    log_warning "This will permanently delete all AWS resources!"
+    log_warning "This will permanently delete all BYU 590R AWS resources!"
     log_warning "The following resources will be deleted:"
-    echo "  - EC2 instance: $INSTANCE_ID"
+    
+    # Show all instances that will be deleted
+    INSTANCES=$(aws ec2 describe-instances \
+        --filters "Name=tag:Name,Values=byu-590r-server" "Name=instance-state-name,Values=running,pending,stopped" \
+        --query 'Reservations[*].Instances[*].[InstanceId,State.Name]' \
+        --output text)
+    
+    if [ -n "$INSTANCES" ]; then
+        echo "  - EC2 instances:"
+        echo "$INSTANCES" | while read instance_id state; do
+            echo "    * $instance_id (State: $state)"
+        done
+    fi
+    
     if [ -n "$ALLOCATION_ID" ]; then
         echo "  - Elastic IP: $ELASTIC_IP"
     fi
-    echo "  - All data on the instance (including MySQL database)"
+    if [ -n "$S3_BUCKET" ]; then
+        echo "  - S3 bucket: $S3_BUCKET (and all contents)"
+    fi
+    echo "  - All data on instances (including MySQL database)"
     echo ""
     
     read -p "Are you sure you want to continue? (type 'yes' to confirm): " CONFIRM
@@ -70,48 +138,117 @@ confirm_teardown() {
     fi
 }
 
-# Stop EC2 instance
-stop_instance() {
-    log_info "Stopping EC2 instance..."
+# Stop all EC2 instances
+stop_instances() {
+    log_info "Finding all BYU 590R instances..."
     
-    aws ec2 stop-instances --instance-ids "$INSTANCE_ID" 2>/dev/null || true
+    # Get all instances with byu-590r-server tag
+    INSTANCES=$(aws ec2 describe-instances \
+        --filters "Name=tag:Name,Values=byu-590r-server" "Name=instance-state-name,Values=running,pending" \
+        --query 'Reservations[*].Instances[*].[InstanceId,State.Name]' \
+        --output text)
     
-    log_info "Waiting for instance to stop..."
-    aws ec2 wait instance-stopped --instance-ids "$INSTANCE_ID" 2>/dev/null || true
-    
-    log_success "EC2 instance stopped"
+    if [ -n "$INSTANCES" ]; then
+        log_info "Found BYU 590R instances to stop:"
+        echo "$INSTANCES" | while read instance_id state; do
+            echo "  Instance: $instance_id (State: $state)"
+        done
+        
+        # Extract instance IDs
+        INSTANCE_IDS=$(echo "$INSTANCES" | awk '{print $1}' | tr '\n' ' ')
+        
+        log_info "Stopping all BYU 590R instances..."
+        aws ec2 stop-instances --instance-ids $INSTANCE_IDS 2>/dev/null || true
+        
+        log_info "Waiting for all instances to stop..."
+        for instance_id in $INSTANCE_IDS; do
+            aws ec2 wait instance-stopped --instance-ids "$instance_id" 2>/dev/null || true
+        done
+        
+        log_success "All EC2 instances stopped"
+    else
+        log_info "No running BYU 590R instances found"
+    fi
 }
 
-# Terminate EC2 instance
-terminate_instance() {
-    log_info "Terminating EC2 instance..."
+# Terminate all EC2 instances
+terminate_instances() {
+    log_info "Finding all BYU 590R instances to terminate..."
     
-    # Disassociate Elastic IP first
-    log_info "Disassociating Elastic IP..."
-    aws ec2 describe-addresses --filters "Name=tag:Name,Values=byu-590r" --query 'Addresses[*].[AllocationId,AssociationId]' --output text | while read allocation_id association_id; do
-        if [ -n "$association_id" ] && [ "$association_id" != "None" ]; then
-            aws ec2 disassociate-address --association-id "$association_id" 2>/dev/null || true
-            log_info "Disassociated Elastic IP: $allocation_id"
-        fi
-    done
+    # Get all instances with byu-590r-server tag (including stopped ones)
+    INSTANCES=$(aws ec2 describe-instances \
+        --filters "Name=tag:Name,Values=byu-590r-server" "Name=instance-state-name,Values=running,pending,stopped" \
+        --query 'Reservations[*].Instances[*].[InstanceId,State.Name]' \
+        --output text)
     
-    aws ec2 terminate-instances --instance-ids "$INSTANCE_ID" 2>/dev/null || true
-    
-    log_info "Waiting for instance to terminate..."
-    aws ec2 wait instance-terminated --instance-ids "$INSTANCE_ID" 2>/dev/null || true
-    
-    log_success "EC2 instance terminated"
+    if [ -n "$INSTANCES" ]; then
+        log_info "Found BYU 590R instances to terminate:"
+        echo "$INSTANCES" | while read instance_id state; do
+            echo "  Instance: $instance_id (State: $state)"
+        done
+        
+        # Extract instance IDs
+        INSTANCE_IDS=$(echo "$INSTANCES" | awk '{print $1}' | tr '\n' ' ')
+        
+        # Disassociate all Elastic IPs first
+        log_info "Disassociating all Elastic IPs..."
+        aws ec2 describe-addresses --filters "Name=tag:Name,Values=byu-590r" --query 'Addresses[*].[AllocationId,AssociationId]' --output text | while read allocation_id association_id; do
+            if [ -n "$association_id" ] && [ "$association_id" != "None" ]; then
+                aws ec2 disassociate-address --association-id "$association_id" 2>/dev/null || true
+                log_info "Disassociated Elastic IP: $allocation_id"
+            fi
+        done
+        
+        log_info "Terminating all BYU 590R instances..."
+        aws ec2 terminate-instances --instance-ids $INSTANCE_IDS 2>/dev/null || true
+        
+        log_info "Waiting for all instances to terminate..."
+        for instance_id in $INSTANCE_IDS; do
+            aws ec2 wait instance-terminated --instance-ids "$instance_id" 2>/dev/null || true
+        done
+        
+        log_success "All EC2 instances terminated"
+    else
+        log_info "No BYU 590R instances found to terminate"
+    fi
 }
 
 # Release Elastic IP
 release_elastic_ip() {
-    log_info "Releasing Elastic IP..."
-    
     if [ -n "$ALLOCATION_ID" ]; then
+        log_info "Releasing Elastic IP..."
+        
         aws ec2 release-address --allocation-id "$ALLOCATION_ID" 2>/dev/null || true
         log_success "Elastic IP released"
     else
-        log_warning "No Elastic IP allocation ID found"
+        log_info "No Elastic IP allocation ID found"
+    fi
+}
+
+# Delete S3 bucket
+delete_s3_bucket() {
+    if [ -n "$S3_BUCKET" ]; then
+        log_info "Deleting S3 bucket..."
+        
+        # Check if bucket exists
+        if aws s3api head-bucket --bucket "$S3_BUCKET" 2>/dev/null; then
+            log_info "Deleting all objects in S3 bucket: $S3_BUCKET"
+            
+            # Delete all objects and versions
+            aws s3api delete-objects --bucket "$S3_BUCKET" --delete "$(aws s3api list-object-versions --bucket "$S3_BUCKET" --query '{Objects: Versions[].{Key:Key,VersionId:VersionId}}')" 2>/dev/null || true
+            
+            # Delete all objects (non-versioned)
+            aws s3 rm s3://"$S3_BUCKET" --recursive 2>/dev/null || true
+            
+            # Delete the bucket
+            aws s3api delete-bucket --bucket "$S3_BUCKET" 2>/dev/null || true
+            
+            log_success "S3 bucket '$S3_BUCKET' deleted"
+        else
+            log_info "S3 bucket '$S3_BUCKET' does not exist or already deleted"
+        fi
+    else
+        log_info "No S3 bucket name found in configuration"
     fi
 }
 
@@ -147,10 +284,23 @@ show_cost_summary() {
     log_info "Cost Summary:"
     echo "  EC2 t2.micro: $0/month (free tier)"
     echo "  Elastic IP: $0/month (released)"
+    echo "  S3 bucket: $0/month (deleted)"
     echo "  ECR: $0/month (repositories deleted)"
     echo "  Total ongoing cost: $0/month"
     echo ""
     log_success "All resources have been cleaned up!"
+}
+
+# Clean up configuration file
+cleanup_config() {
+    log_info "Cleaning up configuration file..."
+    
+    if [ -f ".server-config" ]; then
+        rm -f .server-config
+        log_success "Configuration file .server-config deleted"
+    else
+        log_info "No configuration file to clean up"
+    fi
 }
 
 # Main teardown function
@@ -160,11 +310,13 @@ main() {
     check_config
     confirm_teardown
     
-    stop_instance
-    terminate_instance
+    stop_instances
+    terminate_instances
     release_elastic_ip
+    delete_s3_bucket
     cleanup_ecr
     cleanup_local
+    cleanup_config
     
     echo ""
     show_cost_summary

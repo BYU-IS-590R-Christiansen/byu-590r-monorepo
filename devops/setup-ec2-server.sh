@@ -62,30 +62,20 @@ check_prerequisites() {
     log_success "Prerequisites check passed"
 }
 
-# Cleanup existing instances
-cleanup_existing_instances() {
-    log_info "Checking for existing EC2 instances..."
+# Cleanup existing resources using teardown script
+cleanup_existing_resources() {
+    log_info "Cleaning up any existing resources..."
     
-    # Get all running instances with the project name tag
-    EXISTING_INSTANCES=$(aws ec2 describe-instances \
-        --filters "Name=tag:Name,Values=$PROJECT_NAME-server" "Name=instance-state-name,Values=running,pending" \
-        --query 'Reservations[*].Instances[*].InstanceId' \
-        --output text)
-    
-    if [ -n "$EXISTING_INSTANCES" ]; then
-        log_warning "Found existing instances: $EXISTING_INSTANCES"
-        log_info "Terminating existing instances to prevent duplicates..."
+    # Check if teardown script exists
+    if [ -f "teardown.sh" ]; then
+        log_info "Running teardown script to clean up existing resources..."
         
-        # Terminate existing instances
-        aws ec2 terminate-instances --instance-ids $EXISTING_INSTANCES
+        # Run teardown script in cleanup mode (skip confirmation)
+        echo "yes" | ./teardown.sh
         
-        # Wait for termination to complete
-        log_info "Waiting for instances to terminate..."
-        aws ec2 wait instance-terminated --instance-ids $EXISTING_INSTANCES
-        
-        log_success "Existing instances terminated"
+        log_success "Existing resources cleaned up"
     else
-        log_info "No existing instances found"
+        log_warning "Teardown script not found, skipping cleanup"
     fi
 }
 
@@ -184,6 +174,40 @@ create_ec2_instance() {
         --cidr 0.0.0.0/0 2>/dev/null || log_info "Backend port 4444 rule already exists"
     
     log_success "EC2 instance created: $INSTANCE_ID with Elastic IP: $ELASTIC_IP"
+}
+
+# Create S3 bucket
+create_s3_bucket() {
+    log_info "Creating S3 bucket..."
+    
+    # Generate unique bucket name using project name and timestamp
+    BUCKET_NAME="${PROJECT_NAME}-$(date +%s)-$(openssl rand -hex 4)"
+    
+    log_info "Generated unique bucket name: $BUCKET_NAME"
+    
+    # Check if bucket already exists (shouldn't happen with unique names, but safety check)
+    if aws s3api head-bucket --bucket "$BUCKET_NAME" 2>/dev/null; then
+        log_warning "S3 bucket '$BUCKET_NAME' already exists (unlikely with unique names)"
+        log_info "Using existing bucket: $BUCKET_NAME"
+    else
+        log_info "Creating S3 bucket: $BUCKET_NAME"
+        
+        # Create bucket with region-specific configuration
+        if [ "$AWS_REGION" = "us-east-1" ]; then
+            aws s3api create-bucket --bucket "$BUCKET_NAME"
+        else
+            aws s3api create-bucket --bucket "$BUCKET_NAME" --region "$AWS_REGION" --create-bucket-configuration LocationConstraint="$AWS_REGION"
+        fi
+        
+        # Configure bucket for public access (if needed)
+        aws s3api put-public-access-block \
+            --bucket "$BUCKET_NAME" \
+            --public-access-block-configuration "BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true"
+        
+        log_success "S3 bucket '$BUCKET_NAME' created successfully"
+    fi
+    
+    echo "S3_BUCKET=$BUCKET_NAME" >> .server-config
 }
 
 # Setup EC2 instance with dependencies only
@@ -305,17 +329,36 @@ APACHE_FRONTEND_EOF
     echo "Listen 4444" | sudo tee -a /etc/apache2/ports.conf
     
     sudo systemctl reload apache2
+    
+    # Final Apache restart to ensure all changes take effect
+    sudo systemctl restart apache2
+    echo "[SUCCESS] Apache configuration complete"
 
-# Set proper permissions for Laravel
-sudo chown -R www-data:www-data /var/www/html/api
-sudo chmod -R 755 /var/www/html/api
-sudo chmod -R 775 /var/www/html/api/storage
-sudo chmod -R 775 /var/www/html/api/bootstrap/cache
+# Set proper permissions for Laravel (if directories exist)
+if [ -d "/var/www/html/api" ]; then
+    sudo chown -R www-data:www-data /var/www/html/api
+    sudo chmod -R 755 /var/www/html/api
+    
+    # Create Laravel directories if they don't exist
+    sudo mkdir -p /var/www/html/api/storage
+    sudo mkdir -p /var/www/html/api/bootstrap/cache
+    
+    # Set permissions for Laravel-specific directories
+    sudo chmod -R 775 /var/www/html/api/storage
+    sudo chmod -R 775 /var/www/html/api/bootstrap/cache
+else
+    echo "[INFO] Laravel application directory not found yet - permissions will be set during deployment"
+fi
 
-# Ensure Laravel can write to all necessary directories
-sudo chmod -R 775 /var/www/html/api/storage/logs
-sudo chmod -R 775 /var/www/html/api/storage/framework
-sudo chmod -R 775 /var/www/html/api/storage/app
+# Ensure Laravel can write to all necessary directories (if they exist)
+if [ -d "/var/www/html/api/storage" ]; then
+    sudo mkdir -p /var/www/html/api/storage/logs
+    sudo mkdir -p /var/www/html/api/storage/framework
+    sudo mkdir -p /var/www/html/api/storage/app
+    sudo chmod -R 775 /var/www/html/api/storage/logs
+    sudo chmod -R 775 /var/www/html/api/storage/framework
+    sudo chmod -R 775 /var/www/html/api/storage/app
+fi
 
 # Create .env file if it doesn't exist
 if [ ! -f /var/www/html/api/.env ]; then
@@ -328,13 +371,13 @@ echo "Server setup complete! Ready for GitHub Actions deployment."
 EOF
     
     # Copy and run setup script
-    scp -i ~/.ssh/"$KEY_NAME".pem -o StrictHostKeyChecking=no setup-server.sh ubuntu@"$INSTANCE_IP":~/
-    ssh -i ~/.ssh/"$KEY_NAME".pem -o StrictHostKeyChecking=no ubuntu@"$INSTANCE_IP" "chmod +x setup-server.sh && ./setup-server.sh"
+    scp -i ~/.ssh/"$KEY_NAME".pem -o StrictHostKeyChecking=no setup-server.sh ubuntu@"$EC2_HOST":~/
+    ssh -i ~/.ssh/"$KEY_NAME".pem -o StrictHostKeyChecking=no ubuntu@"$EC2_HOST" "chmod +x setup-server.sh && ./setup-server.sh"
     
     # Clean up temporary files (both local and remote)
     log_info "Cleaning up temporary files..."
     rm -f setup-server.sh
-    ssh -i ~/.ssh/"$KEY_NAME".pem -o StrictHostKeyChecking=no ubuntu@"$INSTANCE_IP" "rm -f setup-server.sh" 2>/dev/null || true
+    ssh -i ~/.ssh/"$KEY_NAME".pem -o StrictHostKeyChecking=no ubuntu@"$EC2_HOST" "rm -f setup-server.sh" 2>/dev/null || true
     
     log_success "EC2 server setup complete"
 }
@@ -344,12 +387,21 @@ main() {
     log_info "Starting BYU 590R Server Setup..."
     
     check_prerequisites
-    cleanup_existing_instances
+    cleanup_existing_resources
     create_ec2_instance
+    create_s3_bucket
     setup_ec2_dependencies
     
     echo ""
     log_success "🎉 Server setup complete!"
+    echo ""
+    echo "╔══════════════════════════════════════════════════════════════════════════════╗"
+    echo "║                                                                              ║"
+    echo "║                    🚀 PROD ENVIRONMENT SETUP COMPLETE 🚀                    ║"
+    echo "║                                                                              ║"
+    echo "║  Your BYU 590R production environment is now ready for deployment!         ║"
+    echo "║                                                                              ║"
+    echo "╚══════════════════════════════════════════════════════════════════════════════╝"
     echo ""
     
     # Load configuration from .server-config
@@ -361,6 +413,7 @@ main() {
     echo "  Instance ID: $INSTANCE_ID"
     echo "  Elastic IP: $ELASTIC_IP"
     echo "  EC2 Host: $EC2_HOST"
+    echo "  S3 Bucket: $S3_BUCKET"
     echo ""
     log_info "📋 Next Steps - Update GitHub Actions Secrets:"
     echo ""
@@ -372,21 +425,31 @@ main() {
     echo "     Secret Name: EC2_HOST"
     echo "     Secret Value: $EC2_HOST"
     echo ""
-    echo "  3. If you don't have EC2_SSH_PRIVATE_KEY secret yet, add it:"
+    echo "  3. Update the S3_BUCKET secret with the generated bucket name:"
+    echo ""
+    echo "     Secret Name: S3_BUCKET"
+    echo "     Secret Value: $S3_BUCKET"
+    echo ""
+    echo "  4. If you don't have EC2_SSH_PRIVATE_KEY secret yet, add it:"
     echo "     Secret Name: EC2_SSH_PRIVATE_KEY"
     echo "     Secret Value: (Copy the contents of ~/.ssh/$KEY_NAME.pem)"
     echo ""
-    echo "  4. To get your SSH private key content, run:"
+    echo "  5. To get your SSH private key content, run:"
     echo "     cat ~/.ssh/$KEY_NAME.pem"
     echo ""
-    echo "  5. Copy the entire output (including -----BEGIN and -----END lines)"
+    echo "  6. Copy the entire output (including -----BEGIN and -----END lines)"
     echo "     and paste it as the value for EC2_SSH_PRIVATE_KEY"
     echo ""
-    echo "  6. Once secrets are updated, push changes to main branch to trigger deployment"
+    echo "  7. Once secrets are updated, push changes to main branch to trigger deployment"
     echo ""
     echo "  🚀 Your application will be available at:"
     echo "     Frontend: http://$EC2_HOST"
     echo "     Backend API: http://$EC2_HOST:4444/api/hello"
+    echo ""
+    echo "  📝 Generated Values Summary:"
+    echo "     EC2_HOST: $EC2_HOST"
+    echo "     S3_BUCKET: $S3_BUCKET"
+    echo "     INSTANCE_ID: $INSTANCE_ID"
     echo ""
     log_info "Configuration saved to: .server-config"
     
