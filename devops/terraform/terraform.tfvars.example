@@ -1,0 +1,12 @@
+# AWS Configuration
+aws_region  = "us-west-1"
+key_name    = "byu-590r"
+project_name = "byu-590r"
+ami_id      = "ami-04f34746e5e1ec0fe"  # Ubuntu 22.04 LTS
+
+# Path to book images directory (relative to terraform directory)
+books_dir   = "../../backend/public/assets/books"
+
+# Environment
+environment = "production"  # Can be "development", "local", or "production"
+
