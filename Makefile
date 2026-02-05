@@ -8,18 +8,18 @@ start:
 	@echo "Checking Laravel backend configuration..."
 	@$(MAKE) setup-backend
 	@echo "Installing Laravel backend dependencies locally..."
-	cd backend && composer install
+# 	cd backend && composer install
 	@echo "Starting Laravel backend with MySQL..."
 	cd backend && docker compose up -d
 	@echo "Waiting for database to be ready..."
-	@for i in $$(seq 1 30); do \
-		if docker compose -f backend/docker-compose.yml exec -T mysql mysqladmin ping -h localhost --silent 2>/dev/null; then \
-			echo "MySQL is ready!"; \
-			break; \
-		fi; \
-		echo "Waiting for MySQL... ($$i/30)"; \
-		sleep 2; \
-	done
+# 	@for i in $$(seq 1 30); do \
+# 		if docker compose -f backend/docker-compose.yml exec -T mysql mysqladmin ping -h localhost --silent 2>/dev/null; then \
+# 			echo "MySQL is ready!"; \
+# 			break; \
+# 		fi; \
+# 		echo "Waiting for MySQL... ($$i/30)"; \
+# 		sleep 2; \
+# 	done
 	@echo "Ensuring database 'app_app' exists..."
 	@docker compose -f backend/docker-compose.yml exec -T mysql mysql -u root -prootpassword -e "CREATE DATABASE IF NOT EXISTS app_app;" 2>/dev/null || true
 	@docker compose -f backend/docker-compose.yml exec -T mysql mysql -u root -prootpassword -e "CREATE USER IF NOT EXISTS 'app_user'@'%' IDENTIFIED BY 'app_password';" 2>/dev/null || true
@@ -254,23 +254,26 @@ setup-backend:
 # Run database migrations
 migrate:
 	@echo "Running database migrations..."
-	@echo "Clearing config cache to ensure latest database settings are used..."
-	cd backend && docker compose exec -T app php artisan config:clear 2>/dev/null || true
-	@echo "Checking database connection..."
-	@for i in $$(seq 1 10); do \
-		if docker compose -f backend/docker-compose.yml exec -T app php artisan migrate:status >/dev/null 2>&1; then \
-			echo "Database connection established!"; \
-			break; \
-		fi; \
-		if [ $$i -eq 10 ]; then \
-			echo "ERROR: Database connection failed after 20 seconds. Please check MySQL container."; \
-			exit 1; \
-		fi; \
-		echo "Waiting for database... ($$i/10)"; \
-		sleep 2; \
-	done
-	@echo "Running migrations and seeding..."
+	cd backend && docker compose exec -T app php artisan config:clear
 	cd backend && docker compose exec -T app php artisan migrate:fresh --seed
+# 	@echo "Running database migrations..."
+# 	@echo "Clearing config cache to ensure latest database settings are used..."
+# 	cd backend && docker compose exec -T app php artisan config:clear 2>/dev/null || true
+# 	@echo "Checking database connection..."
+# 	@for i in $$(seq 1 10); do \
+# 		if docker compose -f backend/docker-compose.yml exec -T app php artisan migrate:status >/dev/null 2>&1; then \
+# 			echo "Database connection established!"; \
+# 			break; \
+# 		fi; \
+# 		if [ $$i -eq 10 ]; then \
+# 			echo "ERROR: Database connection failed after 20 seconds. Please check MySQL container."; \
+# 			exit 1; \
+# 		fi; \
+# 		echo "Waiting for database... ($$i/10)"; \
+# 		sleep 2; \
+# 	done
+# 	@echo "Running migrations and seeding..."
+# 	cd backend && docker compose exec -T app php artisan migrate:fresh --seed
 
 # Development mode (with live reload)
 dev:
