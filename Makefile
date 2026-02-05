@@ -256,17 +256,17 @@ migrate:
 	@echo "Running database migrations..."
 	@echo "Clearing config cache to ensure latest database settings are used..."
 	cd backend && docker compose exec -T app php artisan config:clear 2>/dev/null || true
-	@echo "Checking database connection..."
-	@for i in $$(seq 1 10); do \
-		if docker compose -f backend/docker-compose.yml exec -T app php artisan migrate:status >/dev/null 2>&1; then \
+	@echo "Checking database connection from app container..."
+	@for i in $$(seq 1 30); do \
+		if docker compose -f backend/docker-compose.yml exec -T app php -r "try { new PDO('mysql:host=mysql;dbname=app_app', 'app_user', 'app_password'); echo 'ok'; exit(0); } catch(Exception \$$e) { exit(1); }" 2>/dev/null; then \
 			echo "Database connection established!"; \
 			break; \
 		fi; \
-		if [ $$i -eq 10 ]; then \
-			echo "ERROR: Database connection failed after 20 seconds. Please check MySQL container."; \
+		if [ $$i -eq 30 ]; then \
+			echo "ERROR: Database connection failed after 60 seconds. Please check MySQL container."; \
 			exit 1; \
 		fi; \
-		echo "Waiting for database... ($$i/10)"; \
+		echo "Waiting for database connection from app container... ($$i/30)"; \
 		sleep 2; \
 	done
 	@echo "Running migrations and seeding..."
