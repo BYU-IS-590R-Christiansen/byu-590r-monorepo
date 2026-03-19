@@ -41,6 +41,7 @@ Route::middleware(\App\Http\Middleware\AuthenticateApi::class)->group(function (
         Route::patch('books/{id}/return', 'returnBook');
         Route::post('books/{id}/update_book_picture', 'updateBookPicture');
         Route::post('send_book_report', 'sendBookReport');
+        Route::post('books/generate_cover', 'generateCoverImage');
         Route::post('books/suggest_inputs', 'suggestBookInputs');
     });
 

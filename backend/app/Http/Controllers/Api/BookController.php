@@ -6,7 +6,9 @@ use App\Models\Book;
 use App\Models\Checkout;
 use App\Models\Genre;
 use App\Models\User;
+use Illuminate\Http\Client\Response as HttpResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -15,6 +17,216 @@ use Illuminate\Support\Facades\Validator;
 
 class BookController extends BaseController
 {
+    /**
+     * Generate and upload a book cover image via Gemini/Imagen, returning both
+     * the storage path and a URL suitable for the frontend preview.
+     */
+    public function generateCoverImage(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'name' => 'required|string|max:60',
+            'description' => 'required|string|max:250',
+            'genre_id' => 'nullable|integer|exists:genres,id',
+        ]);
+
+        if ($validator->fails()) {
+            return $this->sendError('Validation Error.', $validator->errors());
+        }
+
+        $apiKey = env('GEMINI_API_KEY');
+        if (empty($apiKey)) {
+            return $this->sendError(
+                'Gemini API key is not configured on the server.',
+                [],
+                500
+            );
+        }
+
+        $model = env('GEMINI_IMAGE_MODEL', 'imagen-4.0-generate-001');
+
+        $name = (string) $request->input('name');
+        $description = (string) $request->input('description');
+        $genreName = null;
+        $genreId = $request->input('genre_id');
+        if (! empty($genreId)) {
+            $genreName = Genre::find($genreId)?->name;
+        }
+
+        $genreClause = $genreName ? "Genre: '{$genreName}'. " : '';
+
+        // We do NOT request readable text on the cover, since that can produce gibberish.
+        // The app already displays the actual `book.name`.
+        $prompt = "Create a square, high-quality book cover image for a library inventory app. " .
+            "Title (do not include readable text): '{$name}'. " .
+            $genreClause .
+            "Book description: '{$description}'. " .
+            "Style: modern, visually appealing, sharp focal subject, realistic lighting. " .
+            "IMPORTANT: Do not include any readable letters, numbers, or words. No typography. " .
+            "No logos or watermarks other than the provider's AI watermark.";
+
+        $endpoint =
+            "https://generativelanguage.googleapis.com/v1beta/models/{$model}:predict";
+
+        try {
+            /** @var HttpResponse $response */
+            $response = Http::withHeaders([
+                'x-goog-api-key' => $apiKey,
+                'Content-Type' => 'application/json',
+            ])->timeout(60)->post($endpoint, [
+                'instances' => [
+                    ['prompt' => $prompt],
+                ],
+                'parameters' => [
+                    'sampleCount' => 1,
+                    'aspectRatio' => '1:1',
+                ],
+            ]);
+
+            if (! $response->successful()) {
+                Log::warning('Gemini image generation failed', [
+                    'status' => $response->status(),
+                    'body' => $response->body(),
+                ]);
+                return $this->sendError('Failed to generate book cover image.', [], 500);
+            }
+
+            $payload = $response->json();
+
+            // Gemini Imagen responses can vary a bit by SDK/version. Normalize to:
+            // - base64 image bytes in `image.imageBytes`
+            // - or a hosted URL in `url`
+            $predictions = $payload['predictions'] ?? null;
+            if (is_array($predictions) && ! empty($predictions)) {
+                $firstPrediction = $predictions[0] ?? null;
+                if (is_array($firstPrediction) && ! empty($firstPrediction['bytesBase64Encoded'])) {
+                    $imageBytesB64 = $firstPrediction['bytesBase64Encoded'];
+                    $mimeType = $firstPrediction['mimeType'] ?? null;
+                    $imageUrl = null;
+                } elseif (is_array($firstPrediction)) {
+                    // Some responses nest the base64 bytes differently.
+                    $nested = $firstPrediction['image'] ?? null;
+                    if (is_array($nested) && ! empty($nested['bytesBase64Encoded'])) {
+                        $imageBytesB64 = $nested['bytesBase64Encoded'];
+                        $mimeType = $nested['mimeType'] ?? null;
+                        $imageUrl = null;
+                    }
+                }
+            }
+
+            $generatedImages =
+                $payload['generatedImages'] ??
+                $payload['generated_images'] ??
+                $payload['generated_images_list'] ??
+                null;
+
+            $firstGenerated = is_array($generatedImages)
+                ? ($generatedImages[0] ?? null)
+                : null;
+
+            $firstImage = null;
+            if (is_array($firstGenerated)) {
+                $firstImage = $firstGenerated['image'] ?? null;
+            }
+
+            // If we already populated from `predictions`, keep those; otherwise initialize.
+            $imageBytesB64 = $imageBytesB64 ?? null;
+            $mimeType = $mimeType ?? null;
+            $imageUrl = $imageUrl ?? null;
+
+            if (is_array($firstImage)) {
+                $imageBytesB64 =
+                    $firstImage['imageBytes'] ??
+                    $firstImage['image_bytes'] ??
+                    null;
+                $mimeType =
+                    $firstImage['mimeType'] ??
+                    $firstImage['mime_type'] ??
+                    null;
+                $imageUrl =
+                    $firstImage['url'] ??
+                    null;
+            }
+
+            if (empty($imageUrl) && is_array($payload['data'] ?? null)) {
+                $imageUrl = $payload['data'][0]['url'] ?? null;
+            }
+
+            // Some schemas place `url` directly under the generated image object.
+            if (empty($imageUrl) && is_array($firstGenerated)) {
+                $imageUrl = $firstGenerated['url'] ?? null;
+            }
+
+            $imageBytes = null;
+            $extension = 'png';
+            if ($mimeType === 'image/jpeg' || $mimeType === 'image/jpg') {
+                $extension = 'jpg';
+            }
+
+            if (! empty($imageBytesB64)) {
+                if (is_string($imageBytesB64)) {
+                    // Some responses may include whitespace/newlines in the base64 payload.
+                    $imageBytesB64 = preg_replace('/\s+/', '', $imageBytesB64);
+                }
+                $imageBytes = base64_decode($imageBytesB64, true);
+                if ($imageBytes === false) {
+                    Log::warning('Gemini returned imageBytes but base64 decode failed', [
+                        'mimeType' => $mimeType,
+                        'imageBytesB64_length' => is_string($imageBytesB64) ? strlen($imageBytesB64) : null,
+                    ]);
+                    $imageBytes = null;
+                }
+            } elseif (! empty($imageUrl)) {
+                // Fallback for schemas that return an already-hosted URL.
+                /** @var HttpResponse $download */
+                $download = Http::timeout(60)->get($imageUrl);
+                if ($download->successful()) {
+                    $imageBytes = $download->body();
+                }
+            }
+
+            if (empty($imageBytes)) {
+                Log::warning('Gemini returned no usable image bytes/url', [
+                    'has_generatedImages' => is_array($generatedImages),
+                    'mimeType' => $mimeType,
+                    'has_imageBytesB64' => ! empty($imageBytesB64),
+                    'imageBytesB64_length' => is_string($imageBytesB64)
+                        ? strlen($imageBytesB64)
+                        : null,
+                    'imageUrl_present' => ! empty($imageUrl),
+                    // Avoid dumping huge base64 content; include keys only.
+                    'payload_keys' => is_array($payload) ? array_keys($payload) : [],
+                ]);
+                return $this->sendError('Gemini returned no usable image bytes.', [], 500);
+            }
+
+            $imageName = time() . '_book_cover.' . $extension;
+            $path = 'images/' . $imageName;
+
+            if ($this->useLocalStorageForImages()) {
+                Storage::disk('public')->put($path, $imageBytes);
+            } else {
+                $s3 = Storage::disk('s3');
+                $s3->put($path, $imageBytes);
+                try {
+                    $s3->setVisibility($path, 'public');
+                } catch (\Throwable $e) {
+                    // Bucket may block public ACLs; object is still uploaded, use presigned URLs.
+                    Log::warning('S3 setVisibility failed (non-fatal): ' . $e->getMessage());
+                }
+            }
+
+            return $this->sendResponse([
+                'file_path' => $path,
+                'file_url' => $this->getS3Url($path),
+            ], 'Book cover image generated');
+        } catch (\Throwable $e) {
+            Log::error('Gemini image generation exception: ' . $e->getMessage(), [
+                'exception' => $e,
+            ]);
+            return $this->sendError('Failed to generate book cover image.', [], 500);
+        }
+    }
+
     public function suggestBookInputs(Request $request, OpenAIController $openAiController)
     {
         $validator = Validator::make($request->all(), [
@@ -58,12 +270,19 @@ class BookController extends BaseController
             'name' => 'required',
             'genre_id' => 'required',
             'description' => 'required',
-            'file' => 'required|image|mimes:jpeg,png,jpg,gif,svg',
+            'file' => 'nullable|image|mimes:jpeg,png,jpg,gif,svg',
+            'generated_file_path' => 'nullable|string',
             'inventory_total_qty' => 'required|integer|min:1'
         ]);
 
         if ($validator->fails()) {
             return $this->sendError('Validation Error.', $validator->errors());
+        }
+
+        if (! $request->hasFile('file') && empty($request->input('generated_file_path'))) {
+            return $this->sendError('Validation Error.', [
+                'file' => ['Either `file` (upload) or `generated_file_path` (AI-generated cover) is required.'],
+            ], 422);
         }
 
         $book = new Book;
@@ -92,6 +311,9 @@ class BookController extends BaseController
                 Log::error('Book cover upload failed: ' . $e->getMessage(), ['exception' => $e]);
                 return $this->sendError('Book cover failed to upload!', [], 500);
             }
+        } elseif (! empty($request->input('generated_file_path'))) {
+            // When the cover was generated/uploaded separately, we only persist the storage path.
+            $book->file = (string) $request->input('generated_file_path');
         }
 
         $book->name = $request['name'];

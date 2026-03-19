@@ -60,9 +60,7 @@ export class BooksService {
     }>(`${this.apiUrl}books`, { headers: this.getAuthHeaders() });
   }
 
-  returnBook(
-    book: Book,
-  ): Observable<{
+  returnBook(book: Book): Observable<{
     success: boolean;
     results: { book: Book };
     message: string;
@@ -131,9 +129,7 @@ export class BooksService {
     });
   }
 
-  updateBook(
-    book: Book,
-  ): Observable<{
+  updateBook(book: Book): Observable<{
     success: boolean;
     results: { book: Book };
     message: string;
@@ -147,9 +143,7 @@ export class BooksService {
     });
   }
 
-  deleteBook(
-    book: Book,
-  ): Observable<{
+  deleteBook(book: Book): Observable<{
     success: boolean;
     results: { book: { id: number } };
     message: string;
@@ -192,6 +186,60 @@ export class BooksService {
       message: string;
     }>(`${this.apiUrl}books/suggest_inputs`, body, {
       headers: this.getAuthHeaders(),
+    });
+  }
+
+  generateBookCoverImage(inputs: {
+    name: string;
+    description: string;
+    genre_id?: number | null;
+  }): Observable<{
+    success: boolean;
+    results: { file_path: string; file_url: string };
+    message: string;
+  }> {
+    const body: Record<string, unknown> = {
+      name: inputs.name,
+      description: inputs.description,
+    };
+
+    if (inputs.genre_id) {
+      body['genre_id'] = inputs.genre_id;
+    }
+
+    return this.http.post<{
+      success: boolean;
+      results: { file_path: string; file_url: string };
+      message: string;
+    }>(`${this.apiUrl}books/generate_cover`, body, {
+      headers: this.getAuthHeaders(),
+    });
+  }
+
+  createBookWithGeneratedCover(
+    book: Partial<Book>,
+    generatedFilePath: string,
+  ): Observable<{
+    success: boolean;
+    results: { book: Book };
+    message: string;
+  }> {
+    const formData = new FormData();
+    formData.append('generated_file_path', generatedFilePath);
+    formData.append('name', book.name!);
+    formData.append('description', book.description!);
+    formData.append('genre_id', book.genre_id!.toString());
+    formData.append(
+      'inventory_total_qty',
+      book.inventory_total_qty!.toString(),
+    );
+
+    return this.http.post<{
+      success: boolean;
+      results: { book: Book };
+      message: string;
+    }>(`${this.apiUrl}books`, formData, {
+      headers: this.getMultipartAuthHeaders(),
     });
   }
 }

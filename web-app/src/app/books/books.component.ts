@@ -26,6 +26,7 @@ import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatSnackBarModule } from '@angular/material/snack-bar';
 import { MatGridListModule } from '@angular/material/grid-list';
 import { MatChipsModule } from '@angular/material/chips';
+import { MatSlideToggleModule } from '@angular/material/slide-toggle';
 
 @Component({
   selector: 'app-books',
@@ -45,6 +46,7 @@ import { MatChipsModule } from '@angular/material/chips';
     MatSnackBarModule,
     MatGridListModule,
     MatChipsModule,
+    MatSlideToggleModule,
   ],
   templateUrl: './books.component.html',
   styleUrl: './books.component.scss',
@@ -78,8 +80,12 @@ export class BooksComponent implements OnInit {
   bookIsDeleting = signal(false);
   bookIsCreating = signal(false);
   aiIsGenerating = signal(false);
+  coverIsGenerating = signal(false);
+  generatePhotoUsingAi = signal(false);
   selectedFile = signal<File | null>(null);
   selectedEditFile = signal<File | null>(null);
+  generatedBookImageUrl = signal<string | null>(null);
+  generatedBookImagePath = signal<string | null>(null);
   expandedAuthors = signal<Set<number>>(new Set());
 
   constructor() {
@@ -88,7 +94,7 @@ export class BooksComponent implements OnInit {
       description: ['', [Validators.required]],
       inventory_total_qty: [1, [Validators.required, Validators.min(1)]],
       genre_id: [1, [Validators.required]],
-      file: [null, [Validators.required]],
+      file: [null],
     });
 
     this.editBookForm = this.fb.group({
@@ -179,13 +185,46 @@ export class BooksComponent implements OnInit {
       file: null,
     });
     this.selectedFile.set(null);
+    this.generatedBookImageUrl.set(null);
+    this.generatedBookImagePath.set(null);
+    this.coverIsGenerating.set(false);
+    this.generatePhotoUsingAi.set(false);
+    this.applyFileValidation();
     this.createBookDialog.set(true);
   }
 
   closeCreateDialog(): void {
     this.newBookForm.reset();
     this.selectedFile.set(null);
+    this.generatedBookImageUrl.set(null);
+    this.generatedBookImagePath.set(null);
+    this.coverIsGenerating.set(false);
+    this.generatePhotoUsingAi.set(false);
+    this.applyFileValidation();
     this.createBookDialog.set(false);
+  }
+
+  onGeneratePhotoToggle(checked: boolean): void {
+    this.generatePhotoUsingAi.set(checked);
+    this.coverIsGenerating.set(false);
+    this.generatedBookImageUrl.set(null);
+    this.generatedBookImagePath.set(null);
+    this.selectedFile.set(null);
+    this.newBookForm.patchValue({ file: null });
+    this.applyFileValidation();
+  }
+
+  private applyFileValidation(): void {
+    const fileControl = this.newBookForm.get('file');
+    if (!fileControl) return;
+
+    if (this.generatePhotoUsingAi()) {
+      fileControl.clearValidators();
+    } else {
+      fileControl.setValidators([Validators.required]);
+    }
+
+    fileControl.updateValueAndValidity();
   }
 
   generateUsingAi(): void {
@@ -196,11 +235,43 @@ export class BooksComponent implements OnInit {
     this.booksService.suggestBookInputs(genreId ?? null).subscribe({
       next: (response) => {
         if (response?.success && response.results) {
-          this.newBookForm.patchValue({
-            name: response.results.name,
-            description: response.results.description,
-          });
+          const name = response.results.name;
+          const description = response.results.description;
+
+          this.newBookForm.patchValue({ name, description });
+
+          if (this.generatePhotoUsingAi()) {
+            this.coverIsGenerating.set(true);
+            this.booksService
+              .generateBookCoverImage({
+                name,
+                description,
+                genre_id: genreId ?? null,
+              })
+              .subscribe({
+                next: (genResponse) => {
+                  this.generatedBookImagePath.set(
+                    genResponse?.results?.file_path ?? null,
+                  );
+                  this.generatedBookImageUrl.set(
+                    genResponse?.results?.file_url ?? null,
+                  );
+                  this.coverIsGenerating.set(false);
+                  this.aiIsGenerating.set(false);
+                },
+                error: (error) => {
+                  this.coverIsGenerating.set(false);
+                  this.aiIsGenerating.set(false);
+                  this.newBookErrorMessage.set(
+                    error?.error?.message ||
+                      'Error generating cover image with AI',
+                  );
+                },
+              });
+            return;
+          }
         }
+
         this.aiIsGenerating.set(false);
       },
       error: (error) => {
@@ -213,7 +284,7 @@ export class BooksComponent implements OnInit {
   }
 
   createBook(): void {
-    if (!this.newBookForm.valid || !this.selectedFile()) {
+    if (!this.newBookForm.valid) {
       return;
     }
 
@@ -222,6 +293,85 @@ export class BooksComponent implements OnInit {
     clearFormErrors(this.newBookForm);
 
     const formValue = this.newBookForm.value;
+
+    if (this.generatePhotoUsingAi()) {
+      const genreId = formValue.genre_id ?? null;
+      const name = formValue.name as string;
+      const description = formValue.description as string;
+
+      const createWithGenerated = (generatedPath: string) => {
+        this.booksService
+          .createBookWithGeneratedCover(formValue, generatedPath)
+          .subscribe({
+            next: (response) => {
+              this.booksStore.addBook(response.results.book);
+              this.closeCreateDialog();
+              this.bookIsCreating.set(false);
+            },
+            error: (error) => {
+              if (error?.error?.data && typeof error.error.data === 'object') {
+                setFormErrors(this.newBookForm, error.error.data);
+                this.newBookErrorMessage.set(
+                  'Please fix the validation errors below.',
+                );
+              } else {
+                this.newBookErrorMessage.set(
+                  error?.error?.message || 'Error creating book',
+                );
+              }
+              this.bookIsCreating.set(false);
+            },
+          });
+      };
+
+      if (this.generatedBookImagePath()) {
+        createWithGenerated(this.generatedBookImagePath()!);
+        return;
+      }
+
+      this.coverIsGenerating.set(true);
+      this.booksService
+        .generateBookCoverImage({
+          name,
+          description,
+          genre_id: genreId,
+        })
+        .subscribe({
+          next: (genResponse) => {
+            const generatedPath = genResponse?.results?.file_path;
+            this.generatedBookImagePath.set(generatedPath ?? null);
+            this.generatedBookImageUrl.set(
+              genResponse?.results?.file_url ?? null,
+            );
+            this.coverIsGenerating.set(false);
+
+            if (!generatedPath) {
+              this.bookIsCreating.set(false);
+              this.newBookErrorMessage.set(
+                'Error generating cover image with AI',
+              );
+              return;
+            }
+
+            createWithGenerated(generatedPath);
+          },
+          error: (error) => {
+            this.coverIsGenerating.set(false);
+            this.bookIsCreating.set(false);
+            this.newBookErrorMessage.set(
+              error?.error?.message || 'Error generating cover image with AI',
+            );
+          },
+        });
+
+      return;
+    }
+
+    if (!this.selectedFile()) {
+      this.bookIsCreating.set(false);
+      return;
+    }
+
     this.booksService.createBook(formValue, this.selectedFile()!).subscribe({
       next: (response) => {
         this.booksStore.addBook(response.results.book);

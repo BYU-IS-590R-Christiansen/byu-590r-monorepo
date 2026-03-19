@@ -190,6 +190,7 @@ jobs:
             (grep -q '^AWS_DEFAULT_REGION=' .env && sed -i 's/^AWS_DEFAULT_REGION=.*/AWS_DEFAULT_REGION=${{ secrets.AWS_REGION }}/' .env || echo 'AWS_DEFAULT_REGION=${{ secrets.AWS_REGION }}' >> .env); \
             ([ -z '${{ secrets.APP_DEBUG }}' ] || (grep -q '^APP_DEBUG=' .env && sed -i 's/^APP_DEBUG=.*/APP_DEBUG=${{ secrets.APP_DEBUG }}/' .env || echo 'APP_DEBUG=${{ secrets.APP_DEBUG }}' >> .env)); \
             ([ -z '${{ secrets.OPENAI_API_KEY }}' ] || (grep -q '^OPENAI_API_KEY=' .env && sed -i 's|^OPENAI_API_KEY=.*|OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}|' .env || echo 'OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}' >> .env)); \
+            ([ -z '${{ secrets.GEMINI_API_KEY }}' ] || (grep -q '^GEMINI_API_KEY=' .env && sed -i 's|^GEMINI_API_KEY=.*|GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}|' .env || echo 'GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}' >> .env)); \
             true"
 
       - name: Migrate and restart backend

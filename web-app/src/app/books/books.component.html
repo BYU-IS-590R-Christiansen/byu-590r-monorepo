@@ -272,18 +272,49 @@
                   }}</mat-error>
                 }
               </mat-form-field>
+              <mat-slide-toggle
+                [checked]="generatePhotoUsingAi()"
+                (change)="onGeneratePhotoToggle($event.checked)"
+              >
+                Generate photo using AI
+              </mat-slide-toggle>
               <div class="form-group">
-                <label class="file-input-label">File*</label>
-                <input
-                  type="file"
-                  accept="image/*"
-                  (change)="onNewBookFileChange($event)"
-                  class="file-input"
-                />
-                @if (getFieldError(newBookForm, "file")) {
-                  <div class="file-input-error">
-                    {{ getFieldError(newBookForm, "file") }}
-                  </div>
+                @if (!generatePhotoUsingAi()) {
+                  <label class="file-input-label">File*</label>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    (change)="onNewBookFileChange($event)"
+                    class="file-input"
+                  />
+                  @if (getFieldError(newBookForm, "file")) {
+                    <div class="file-input-error">
+                      {{ getFieldError(newBookForm, "file") }}
+                    </div>
+                  }
+                } @else {
+                  <label class="file-input-label"
+                    >Auto-generated Book Image</label
+                  >
+                  @if (generatedBookImageUrl()) {
+                    <img
+                      [src]="generatedBookImageUrl()"
+                      [alt]="newBookForm.value.name || 'Book cover'"
+                      class="book-image"
+                    />
+                  } @else {
+                    <div class="file-input-error">
+                      @if (coverIsGenerating()) {
+                        <mat-spinner diameter="20"></mat-spinner>
+                        <span>Generating cover...</span>
+                      } @else {
+                        <span
+                          >Click 'Generate using AI' or 'Save' to create a
+                          cover.</span
+                        >
+                      }
+                    </div>
+                  }
                 }
               </div>
               <small>*indicates required field</small>
@@ -299,7 +330,9 @@
             <button
               mat-raised-button
               color="primary"
-              [disabled]="!newBookForm.valid || bookIsCreating()"
+              [disabled]="
+                !newBookForm.valid || bookIsCreating() || coverIsGenerating()
+              "
               (click)="createBook()"
             >
               @if (bookIsCreating()) {
