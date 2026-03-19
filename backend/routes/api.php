@@ -1,6 +1,8 @@
 <?php
 
 use App\Http\Controllers\Api\BookController;
+use App\Http\Controllers\Api\DrinkController;
+use App\Http\Controllers\Api\FoodController;
 use App\Http\Controllers\Api\HelloWorldController;
 use App\Http\Controllers\Api\RegisterController;
 use App\Http\Controllers\Api\UserController;
@@ -22,6 +24,7 @@ Route::controller(RegisterController::class)->group(function () {
     Route::get('verify_email', 'verifyEmail');
 });
 
+
 // Protected routes
 Route::middleware(\App\Http\Middleware\AuthenticateApi::class)->group(function () {
     Route::controller(UserController::class)->group(function () {
@@ -39,4 +42,9 @@ Route::middleware(\App\Http\Middleware\AuthenticateApi::class)->group(function (
         Route::post('books/{id}/update_book_picture', 'updateBookPicture');
         Route::post('send_book_report', 'sendBookReport');
     });
+
+    Route::resource('foods', FoodController::class);
+
+    Route::resource('drinks', DrinkController::class);
+    
 });

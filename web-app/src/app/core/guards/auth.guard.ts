@@ -6,10 +6,10 @@ export const authGuard = () => {
   const authStore = inject(AuthStore);
   const router = inject(Router);
 
+  console.log('authGuard', authStore.isAuthenticated());
   if (authStore.isAuthenticated()) {
     return true;
   }
 
-  return router.createUrlTree(['/login']);
+  return router.createUrlTree(['/books']);
 };
-

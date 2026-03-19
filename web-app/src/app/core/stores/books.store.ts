@@ -28,10 +28,7 @@ export const BooksStore = signalStore(
   withState<BooksState>(initialState),
   withComputed(({ booksList }) => ({
     books: computed(() => {
-      return booksList().map((book) => ({
-        ...book,
-        available_qty: book.inventory_total_qty - book.checked_qty,
-      }));
+      return booksList();
     }),
     genres: computed(() => {
       const genreMap = new Map<number, Genre>();
@@ -107,5 +104,5 @@ export const BooksStore = signalStore(
         });
       }
     },
-  }))
+  })),
 );

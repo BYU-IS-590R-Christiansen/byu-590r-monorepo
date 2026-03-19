@@ -18,10 +18,13 @@ class DatabaseSeeder extends Seeder
             GenreSeeder::class,
             AuthorSeeder::class,
             PhoneSeeder::class,
+            DrinkSeeder::class,
             BooksSeeder::class,
             AuthorPhonesSeeder::class,
             AuthorBooksSeeder::class,
             PageSeeder::class,
+            FoodSeeder::class,
+          
         ]);
     }
 }

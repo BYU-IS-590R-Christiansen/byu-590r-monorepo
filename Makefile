@@ -83,7 +83,7 @@ start-prod:
 
 # Run database migrations and seed; used by start
 migrate:
-	cd backend && docker compose exec -T app php artisan migrate --force --seed
+	cd backend && docker compose exec -T app php artisan migrate:fresh --force --seed
 
 # Stop all services
 stop:

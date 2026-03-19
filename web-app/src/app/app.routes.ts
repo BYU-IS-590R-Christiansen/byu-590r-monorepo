@@ -20,5 +20,16 @@ export const routes: Routes = [
       import('./books/books.component').then((m) => m.BooksComponent),
     canActivate: [authGuard],
   },
-  { path: '**', redirectTo: '/login' },
+  {
+    path: 'foods',
+    loadComponent: () =>
+      import('./foods/foods.component').then((m) => m.FoodsComponent),
+    canActivate: [authGuard],
+  },
+  {
+    path: 'drinks',
+    loadComponent: () =>
+      import('./drinks/drinks.component').then((m) => m.DrinksComponent),
+    canActivate: [authGuard],
+  },
 ];
