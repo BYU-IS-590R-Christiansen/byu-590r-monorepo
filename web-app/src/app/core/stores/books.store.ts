@@ -46,7 +46,11 @@ export const BooksStore = signalStore(
   withMethods((store) => ({
     setBooks(books: Book[]): void {
       patchState(store, {
-        booksList: books,
+        booksList: books.map((book) => ({
+          ...book,
+          available_qty:
+            (book.inventory_total_qty ?? 0) - (book.checked_qty ?? 0),
+        })),
       });
     },
     setBookCheckedQty(book: Book): void {
