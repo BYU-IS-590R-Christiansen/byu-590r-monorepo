@@ -18,7 +18,7 @@ return new class extends Migration
             $table->string('description');
             $table->string('file')->nullable();
             $table->integer('checked_qty')->default(0);
-            $table->integer('inventory_total_qty');
+            $table->integer('inventory_total_qty')->default(1);
             $table->timestamps();
         });
     }
