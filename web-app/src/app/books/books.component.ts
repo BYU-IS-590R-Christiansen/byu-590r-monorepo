@@ -77,6 +77,7 @@ export class BooksComponent implements OnInit {
   bookIsUpdating = signal(false);
   bookIsDeleting = signal(false);
   bookIsCreating = signal(false);
+  aiIsGenerating = signal(false);
   selectedFile = signal<File | null>(null);
   selectedEditFile = signal<File | null>(null);
   expandedAuthors = signal<Set<number>>(new Set());
@@ -187,6 +188,30 @@ export class BooksComponent implements OnInit {
     this.createBookDialog.set(false);
   }
 
+  generateUsingAi(): void {
+    const genreId = this.newBookForm.get('genre_id')?.value;
+    this.aiIsGenerating.set(true);
+    this.newBookErrorMessage.set(null);
+
+    this.booksService.suggestBookInputs(genreId ?? null).subscribe({
+      next: (response) => {
+        if (response?.success && response.results) {
+          this.newBookForm.patchValue({
+            name: response.results.name,
+            description: response.results.description,
+          });
+        }
+        this.aiIsGenerating.set(false);
+      },
+      error: (error) => {
+        this.aiIsGenerating.set(false);
+        this.newBookErrorMessage.set(
+          error?.error?.message || 'Error generating AI suggestions',
+        );
+      },
+    });
+  }
+
   createBook(): void {
     if (!this.newBookForm.valid || !this.selectedFile()) {
       return;
@@ -207,11 +232,11 @@ export class BooksComponent implements OnInit {
         if (error?.error?.data && typeof error.error.data === 'object') {
           setFormErrors(this.newBookForm, error.error.data);
           this.newBookErrorMessage.set(
-            'Please fix the validation errors below.'
+            'Please fix the validation errors below.',
           );
         } else {
           this.newBookErrorMessage.set(
-            error?.error?.message || 'Error creating book'
+            error?.error?.message || 'Error creating book',
           );
         }
         this.bookIsCreating.set(false);
@@ -242,11 +267,11 @@ export class BooksComponent implements OnInit {
             if (error?.error?.data && typeof error.error.data === 'object') {
               setFormErrors(this.editBookForm, error.error.data);
               this.editBookErrorMessage.set(
-                'Please fix the validation errors below.'
+                'Please fix the validation errors below.',
               );
             } else {
               this.editBookErrorMessage.set(
-                error?.error?.message || 'Error updating book picture'
+                error?.error?.message || 'Error updating book picture',
               );
             }
             this.bookIsUpdating.set(false);
@@ -270,11 +295,11 @@ export class BooksComponent implements OnInit {
         if (error?.error?.data && typeof error.error.data === 'object') {
           setFormErrors(this.editBookForm, error.error.data);
           this.editBookErrorMessage.set(
-            'Please fix the validation errors below.'
+            'Please fix the validation errors below.',
           );
         } else {
           this.editBookErrorMessage.set(
-            error?.error?.message || 'Error updating book'
+            error?.error?.message || 'Error updating book',
           );
         }
         this.bookIsUpdating.set(false);

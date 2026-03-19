@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Models\Book;
 use App\Models\Checkout;
+use App\Models\Genre;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -14,6 +15,26 @@ use Illuminate\Support\Facades\Validator;
 
 class BookController extends BaseController
 {
+    public function suggestBookInputs(Request $request, OpenAIController $openAiController)
+    {
+        $validator = Validator::make($request->all(), [
+            'genre_id' => 'nullable|integer|exists:genres,id',
+        ]);
+
+        if ($validator->fails()) {
+            return $this->sendError('Validation Error.', $validator->errors());
+        }
+
+        $genreId = $request->input('genre_id');
+        $genreName = null;
+        if (! empty($genreId)) {
+            $genreName = Genre::find($genreId)?->name;
+        }
+
+        $suggestions = $openAiController->generateBookFormData($genreName);
+        return $this->sendResponse($suggestions, 'AI suggestions generated');
+    }
+
     /**
      * Display a listing of the resource.
      */
