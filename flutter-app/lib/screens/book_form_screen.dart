@@ -1,9 +1,7 @@
-import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:file_picker/file_picker.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:byu_590r_flutter_app/core/api_client.dart';
 import 'package:byu_590r_flutter_app/models/book.dart';
 import 'package:byu_590r_flutter_app/models/genre_option.dart';
@@ -35,7 +33,6 @@ class _BookFormScreenState extends State<BookFormScreen> {
   final _inventoryController = TextEditingController();
 
   int? _genreId;
-  String? _imagePath;
   Uint8List? _imageBytes;
   String? _imageFileName;
   bool _submitting = false;
@@ -70,45 +67,26 @@ class _BookFormScreenState extends State<BookFormScreen> {
 
   int? get _checkedQty => widget.book?.checkedQty;
 
-  /// `image_picker` + gallery can fail on some simulators; `file_picker` uses the system picker.
+  /// Gallery via `image_picker` only (no `file_picker` native channel).
+  /// Uses [XFile.readAsBytes] so we never need `dart:io` / paths (web-safe).
+  /// After adding/changing plugins, **stop the app** and run `flutter run` again (not hot reload).
   Future<void> _pickImage() async {
     try {
-      if (kIsWeb) {
-        final result = await FilePicker.platform.pickFiles(
-          type: FileType.image,
-          allowMultiple: false,
-          withData: true,
-        );
-        if (!mounted) return;
-        final f = result?.files.single;
-        if (f?.bytes != null) {
-          setState(() {
-            _imageBytes = f!.bytes;
-            _imageFileName = f.name;
-            _imagePath = null;
-          });
-        }
-        return;
-      }
-
-      final result = await FilePicker.platform.pickFiles(
-        type: FileType.image,
-        allowMultiple: false,
-        withData: false,
+      final x = await ImagePicker().pickImage(
+        source: ImageSource.gallery,
+        imageQuality: 88,
       );
+      if (!mounted || x == null) return;
+      final bytes = await x.readAsBytes();
       if (!mounted) return;
-      final path = result?.files.single.path;
-      if (path != null) {
-        setState(() {
-          _imagePath = path;
-          _imageBytes = null;
-          _imageFileName = null;
-        });
-      }
+      setState(() {
+        _imageBytes = bytes;
+        _imageFileName = x.name;
+      });
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Could not open file picker: $e')),
+          SnackBar(content: Text('Could not pick image: $e')),
         );
       }
     }
@@ -164,8 +142,7 @@ class _BookFormScreenState extends State<BookFormScreen> {
         _toast('Inventory must be at least 1.');
         return;
       }
-      final hasFile = _imagePath != null ||
-          (_imageBytes != null && _imageBytes!.isNotEmpty);
+      final hasFile = _imageBytes != null && _imageBytes!.isNotEmpty;
       if (!hasFile) {
         _toast('Choose a cover image (required for new books).');
         return;
@@ -183,15 +160,6 @@ class _BookFormScreenState extends State<BookFormScreen> {
           description: _descriptionController.text.trim(),
           genreId: gid,
           inventoryTotalQty: inv,
-        );
-      } else if (_imagePath != null) {
-        res = await _api.createBook(
-          accessToken: widget.accessToken,
-          name: _nameController.text.trim(),
-          description: _descriptionController.text.trim(),
-          genreId: gid,
-          inventoryTotalQty: inv,
-          imageFilePath: _imagePath!,
         );
       } else {
         res = await _api.createBook(
@@ -228,7 +196,7 @@ class _BookFormScreenState extends State<BookFormScreen> {
   }
 
   bool get _hasCoverPreview =>
-      _imagePath != null || (_imageBytes != null && _imageBytes!.isNotEmpty);
+      _imageBytes != null && _imageBytes!.isNotEmpty;
 
   /// Must match one of [widget.genres] or DropdownButton asserts / shows wrong errors.
   int? get _dropdownGenreValue {
@@ -262,7 +230,7 @@ class _BookFormScreenState extends State<BookFormScreen> {
               const SizedBox(height: 12),
               OutlinedButton.icon(
                 onPressed: _submitting ? null : _pickImage,
-                icon: const Icon(Icons.folder_open_outlined),
+                icon: const Icon(Icons.photo_library_outlined),
                 label: Text(
                   _hasCoverPreview ? 'Change cover image' : 'Choose cover image',
                 ),
@@ -271,19 +239,12 @@ class _BookFormScreenState extends State<BookFormScreen> {
                 const SizedBox(height: 12),
                 ClipRRect(
                   borderRadius: BorderRadius.circular(12),
-                  child: _imagePath != null
-                      ? Image.file(
-                          File(_imagePath!),
-                          height: 160,
-                          width: double.infinity,
-                          fit: BoxFit.cover,
-                        )
-                      : Image.memory(
-                          _imageBytes!,
-                          height: 160,
-                          width: double.infinity,
-                          fit: BoxFit.cover,
-                        ),
+                  child: Image.memory(
+                    _imageBytes!,
+                    height: 160,
+                    width: double.infinity,
+                    fit: BoxFit.cover,
+                  ),
                 ),
               ],
               const SizedBox(height: 20),
