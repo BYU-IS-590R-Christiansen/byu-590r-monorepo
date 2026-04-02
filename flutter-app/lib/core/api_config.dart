@@ -41,7 +41,7 @@ class ApiConfig {
     if (ip == null || ip.isEmpty) {
       throw StateError('Release build has no stored API IP; show server config first.');
     }
-    _cached = 'http://$ip:${apiPort}/api/';
+    _cached = 'http://$ip:$apiPort/api/';
     return _cached!;
   }
 

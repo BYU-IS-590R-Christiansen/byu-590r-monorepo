@@ -65,6 +65,22 @@ class ApiClient {
     }
   }
 
+  Future<dynamic> getBooks(String accessToken) async {
+    try {
+      final base = await _baseUrl();
+      Response response = await _dio.get(
+        '${base}books',
+        options: Options(
+          headers: {'Authorization': 'Bearer $accessToken'},
+        ),
+      );
+      return response.data;
+    } on DioException catch (e) {
+      return e.response?.data ??
+          {'success': false, 'message': 'Network error', 'results': []};
+    }
+  }
+
   Future<dynamic> logout(String accessToken) async {
     try {
       final base = await _baseUrl();

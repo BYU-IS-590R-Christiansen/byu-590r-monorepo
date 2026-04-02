@@ -1,8 +1,9 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:byu_590r_flutter_app/app_theme.dart';
 import 'package:byu_590r_flutter_app/core/api_config.dart';
-import 'package:byu_590r_flutter_app/screens/register.dart';
 import 'package:byu_590r_flutter_app/screens/server_config_screen.dart';
+import 'package:byu_590r_flutter_app/screens/welcome_screen.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -15,11 +16,9 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'BYU 590R Flutter App',
+      title: 'BYU 590R Library',
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        primarySwatch: Colors.blue,
-      ),
+      theme: buildAppTheme(),
       home: const AppEntry(),
     );
   }
@@ -40,10 +39,10 @@ class _AppEntryState extends State<AppEntry> {
   @override
   Widget build(BuildContext context) {
     if (!kReleaseMode || ApiConfig.hasCompileTimeBaseUrl) {
-      return const RegisterScreen();
+      return const WelcomeScreen();
     }
     if (_releaseIpJustSaved) {
-      return const RegisterScreen();
+      return const WelcomeScreen();
     }
 
     return FutureBuilder<bool>(
@@ -55,7 +54,7 @@ class _AppEntryState extends State<AppEntry> {
           );
         }
         if (snapshot.data == true) {
-          return const RegisterScreen();
+          return const WelcomeScreen();
         }
         return ServerConfigScreen(
           onSaved: () => setState(() => _releaseIpJustSaved = true),

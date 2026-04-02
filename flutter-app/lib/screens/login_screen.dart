@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:byu_590r_flutter_app/core/api_client.dart';
-import 'package:byu_590r_flutter_app/screens/home.dart';
+import 'package:byu_590r_flutter_app/screens/main_shell.dart';
+import 'package:byu_590r_flutter_app/screens/register.dart';
 import 'package:byu_590r_flutter_app/utils/validator.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -12,147 +13,154 @@ class LoginScreen extends StatefulWidget {
 
 class _LoginScreenState extends State<LoginScreen> {
   final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
-  final TextEditingController emailController = TextEditingController();
-  final TextEditingController passwordController = TextEditingController();
+  final TextEditingController _emailController = TextEditingController();
+  final TextEditingController _passwordController = TextEditingController();
   final ApiClient _apiClient = ApiClient();
-  bool _showPassword = false;
+  bool _obscurePassword = true;
 
-  Future<void> login() async {
-    if (_formKey.currentState!.validate()) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text('Processing Data'),
-        backgroundColor: Colors.green,
-      ));
-      dynamic res = await _apiClient.login(
-        emailController.text,
-        passwordController.text,
+  Future<void> _login() async {
+    if (!(_formKey.currentState?.validate() ?? false)) return;
+
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Signing in…')),
+    );
+
+    final dynamic res = await _apiClient.login(
+      _emailController.text,
+      _passwordController.text,
+    );
+
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+
+    if (res['success'] == true) {
+      final String accessToken = res['results']['token'] as String;
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute<void>(
+          builder: (context) => MainShell(accessToken: accessToken),
+        ),
       );
-
-      ScaffoldMessenger.of(context).hideCurrentSnackBar();
-      
-      if (res['success'] == true) {
-        String accessToken = res['results']['token'];
-        Navigator.push(
-            context,
-            MaterialPageRoute(
-                builder: (context) => HomeScreen(accesstoken: accessToken)));
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('Error: ${res['message'] ?? 'Login failed'}'),
-          backgroundColor: Colors.red,
-        ));
-      }
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('${res['message'] ?? 'Login failed'}'),
+          backgroundColor: Theme.of(context).colorScheme.error,
+        ),
+      );
     }
   }
 
   @override
+  void dispose() {
+    _emailController.dispose();
+    _passwordController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    var size = MediaQuery.of(context).size;
+    final cs = Theme.of(context).colorScheme;
+
     return Scaffold(
-        backgroundColor: Colors.blueGrey[200],
-        body: Form(
-          key: _formKey,
-          child: Stack(children: [
-            SizedBox(
-              width: size.width,
-              height: size.height,
-              child: Align(
-                alignment: Alignment.center,
-                child: Container(
-                  width: size.width * 0.85,
-                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 30),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(20),
+      appBar: AppBar(
+        title: const Text('Log in'),
+      ),
+      body: SafeArea(
+        child: Center(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+            child: Form(
+              key: _formKey,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(
+                    'Welcome back',
+                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                          fontWeight: FontWeight.bold,
+                        ),
                   ),
-                  child: SingleChildScrollView(
-                    child: Center(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: <Widget>[
-                          const Center(
-                            child: Text(
-                              "Login",
-                              style: TextStyle(
-                                fontSize: 30,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ),
-                          SizedBox(height: size.height * 0.06),
-                          TextFormField(
-                            controller: emailController,
-                            validator: (value) {
-                              return Validator.validateEmail(value ?? "");
-                            },
-                            decoration: InputDecoration(
-                              hintText: "Email",
-                              isDense: true,
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(10),
-                              ),
-                            ),
-                          ),
-                          SizedBox(height: size.height * 0.03),
-                          TextFormField(
-                            obscureText: _showPassword,
-                            controller: passwordController,
-                            validator: (value) {
-                              return Validator.validatePassword(value ?? "");
-                            },
-                            decoration: InputDecoration(
-                              suffixIcon: GestureDetector(
-                                onTap: () {
-                                  setState(() => _showPassword = !_showPassword);
-                                },
-                                child: Icon(
-                                  _showPassword
-                                      ? Icons.visibility
-                                      : Icons.visibility_off,
-                                  color: Colors.grey,
-                                ),
-                              ),
-                              hintText: "Password",
-                              isDense: true,
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(10),
-                              ),
-                            ),
-                          ),
-                          SizedBox(height: size.height * 0.04),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Expanded(
-                                child: ElevatedButton(
-                                  onPressed: login,
-                                  style: ElevatedButton.styleFrom(
-                                      backgroundColor: Colors.white,
-                                      shape: RoundedRectangleBorder(
-                                          borderRadius: BorderRadius.circular(10)),
-                                      padding: const EdgeInsets.symmetric(
-                                          horizontal: 40, vertical: 15)),
-                                  child: const Text(
-                                    "Login",
-                                    style: TextStyle(
-                                      fontSize: 20,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
+                  const SizedBox(height: 8),
+                  Text(
+                    'Enter your email and password to continue.',
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: Colors.grey.shade600,
+                        ),
+                  ),
+                  const SizedBox(height: 28),
+                  TextFormField(
+                    controller: _emailController,
+                    keyboardType: TextInputType.emailAddress,
+                    autocorrect: false,
+                    textInputAction: TextInputAction.next,
+                    validator: (v) => Validator.validateEmail(v ?? ''),
+                    decoration: const InputDecoration(
+                      labelText: 'Email',
+                      prefixIcon: Icon(Icons.email_outlined),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  TextFormField(
+                    controller: _passwordController,
+                    obscureText: _obscurePassword,
+                    textInputAction: TextInputAction.done,
+                    onFieldSubmitted: (_) => _login(),
+                    validator: (v) => Validator.validatePassword(v ?? ''),
+                    decoration: InputDecoration(
+                      labelText: 'Password',
+                      prefixIcon: const Icon(Icons.lock_outline_rounded),
+                      suffixIcon: IconButton(
+                        tooltip: _obscurePassword ? 'Show password' : 'Hide password',
+                        onPressed: () {
+                          setState(() => _obscurePassword = !_obscurePassword);
+                        },
+                        icon: Icon(
+                          _obscurePassword
+                              ? Icons.visibility_outlined
+                              : Icons.visibility_off_outlined,
+                        ),
                       ),
                     ),
                   ),
-                ),
+                  const SizedBox(height: 24),
+                  FilledButton(
+                    onPressed: _login,
+                    child: const Text('Log in'),
+                  ),
+                  const SizedBox(height: 16),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(
+                        'No account yet?',
+                        style: TextStyle(color: Colors.grey.shade600),
+                      ),
+                      TextButton(
+                        onPressed: () {
+                          Navigator.pushReplacement(
+                            context,
+                            MaterialPageRoute<void>(
+                              builder: (context) => const RegisterScreen(),
+                            ),
+                          );
+                        },
+                        child: const Text('Create account'),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  TextButton(
+                    onPressed: () => Navigator.maybePop(context),
+                    child: Text('Back', style: TextStyle(color: cs.outline)),
+                  ),
+                ],
               ),
             ),
-          ]),
-        ));
+          ),
+        ),
+      ),
+    );
   }
 }
-
