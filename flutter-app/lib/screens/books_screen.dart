@@ -70,34 +70,50 @@ class _BooksScreenState extends State<BooksScreen> {
       return placeholder();
     }
 
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(6),
-      child: Image.network(
-        url,
-        width: _coverWidth,
-        height: _coverHeight,
-        fit: BoxFit.cover,
-        loadingBuilder: (context, child, loadingProgress) {
-          if (loadingProgress == null) return child;
-          return SizedBox(
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: () => _openCoverFullScreen(context, url),
+        borderRadius: BorderRadius.circular(6),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(6),
+          child: Image.network(
+            url,
             width: _coverWidth,
             height: _coverHeight,
-            child: Center(
-              child: SizedBox(
-                width: 24,
-                height: 24,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  value: loadingProgress.expectedTotalBytes != null
-                      ? loadingProgress.cumulativeBytesLoaded /
-                          loadingProgress.expectedTotalBytes!
-                      : null,
+            fit: BoxFit.cover,
+            loadingBuilder: (context, child, loadingProgress) {
+              if (loadingProgress == null) return child;
+              return SizedBox(
+                width: _coverWidth,
+                height: _coverHeight,
+                child: Center(
+                  child: SizedBox(
+                    width: 24,
+                    height: 24,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      value: loadingProgress.expectedTotalBytes != null
+                          ? loadingProgress.cumulativeBytesLoaded /
+                              loadingProgress.expectedTotalBytes!
+                          : null,
+                    ),
+                  ),
                 ),
-              ),
-            ),
-          );
-        },
-        errorBuilder: (_, __, ___) => placeholder(),
+              );
+            },
+            errorBuilder: (_, __, ___) => placeholder(),
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _openCoverFullScreen(BuildContext context, String imageUrl) {
+    Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        fullscreenDialog: true,
+        builder: (context) => _BookCoverFullScreenPage(imageUrl: imageUrl),
       ),
     );
   }
@@ -213,6 +229,54 @@ class _BooksScreenState extends State<BooksScreen> {
         title: const Text('Books'),
       ),
       body: _booksBody(),
+    );
+  }
+}
+
+class _BookCoverFullScreenPage extends StatelessWidget {
+  const _BookCoverFullScreenPage({required this.imageUrl});
+
+  final String imageUrl;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      appBar: AppBar(
+        backgroundColor: Colors.black,
+        foregroundColor: Colors.white,
+        iconTheme: const IconThemeData(color: Colors.white),
+      ),
+      body: SafeArea(
+        child: Center(
+          child: InteractiveViewer(
+            minScale: 0.5,
+            maxScale: 4,
+            child: Image.network(
+              imageUrl,
+              fit: BoxFit.contain,
+              loadingBuilder: (context, child, loadingProgress) {
+                if (loadingProgress == null) return child;
+                return const SizedBox(
+                  width: 120,
+                  height: 120,
+                  child: Center(
+                    child: CircularProgressIndicator(color: Colors.white),
+                  ),
+                );
+              },
+              errorBuilder: (_, __, ___) => const Padding(
+                padding: EdgeInsets.all(24),
+                child: Text(
+                  'Could not load image.',
+                  style: TextStyle(color: Colors.white70),
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
