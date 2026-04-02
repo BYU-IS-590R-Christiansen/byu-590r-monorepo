@@ -5,6 +5,7 @@ class Book {
     required this.name,
     required this.description,
     this.imageUrl,
+    this.genreId,
     this.genreName,
     required this.authorNames,
     this.inventoryTotalQty,
@@ -16,6 +17,7 @@ class Book {
   final String description;
   /// Cover image URL from API `file` (null when no image).
   final String? imageUrl;
+  final int? genreId;
   final String? genreName;
   final List<String> authorNames;
   final int? inventoryTotalQty;
@@ -38,11 +40,15 @@ class Book {
       imageUrl = rawFile.trim();
     }
 
+    final gid = (json['genre_id'] as num?)?.toInt() ??
+        ((genre?['id'] as num?)?.toInt());
+
     return Book(
       id: (json['id'] as num).toInt(),
       name: json['name'] as String? ?? '',
       description: json['description'] as String? ?? '',
       imageUrl: imageUrl,
+      genreId: gid,
       genreName: genre?['name'] as String?,
       authorNames: names,
       inventoryTotalQty: (json['inventory_total_qty'] as num?)?.toInt(),

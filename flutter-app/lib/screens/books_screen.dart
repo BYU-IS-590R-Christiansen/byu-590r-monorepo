@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:byu_590r_flutter_app/core/api_client.dart';
 import 'package:byu_590r_flutter_app/models/book.dart';
+import 'package:byu_590r_flutter_app/models/genre_option.dart';
+import 'package:byu_590r_flutter_app/screens/book_form_screen.dart';
 
 class BooksScreen extends StatefulWidget {
   const BooksScreen({
@@ -43,6 +45,78 @@ class _BooksScreenState extends State<BooksScreen> {
     setState(() {
       _booksFuture = _loadBooks();
     });
+  }
+
+  Future<void> _openAddBook() async {
+    final books = await _loadBooks();
+    if (!mounted) return;
+    final genres = genresForForm(books);
+    final ok = await Navigator.of(context).push<bool>(
+      MaterialPageRoute<bool>(
+        builder: (context) => BookFormScreen(
+          accessToken: widget.accessToken,
+          genres: genres,
+        ),
+      ),
+    );
+    if (ok == true && mounted) _retry();
+  }
+
+  Future<void> _openEditBook(Book book) async {
+    final books = await _loadBooks();
+    if (!mounted) return;
+    final genres = genresForForm(books, ensureGenreFor: book);
+    final ok = await Navigator.of(context).push<bool>(
+      MaterialPageRoute<bool>(
+        builder: (context) => BookFormScreen(
+          accessToken: widget.accessToken,
+          genres: genres,
+          book: book,
+        ),
+      ),
+    );
+    if (ok == true && mounted) _retry();
+  }
+
+  Future<void> _confirmDelete(Book book) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete book?'),
+        content: Text('Remove “${book.name}” from the catalog?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+
+    final dynamic res = await _apiClient.deleteBook(
+      accessToken: widget.accessToken,
+      id: book.id,
+    );
+    if (!mounted) return;
+
+    if (res is Map<String, dynamic> && res['success'] == true) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Book deleted')),
+      );
+      _retry();
+    } else {
+      final msg = res is Map<String, dynamic>
+          ? (res['message']?.toString() ?? 'Delete failed')
+          : 'Delete failed';
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(msg)),
+      );
+    }
   }
 
   static const double _coverWidth = 56;
@@ -148,7 +222,18 @@ class _BooksScreenState extends State<BooksScreen> {
         }
         final books = snapshot.data ?? [];
         if (books.isEmpty) {
-          return const Center(child: Text('No books returned.'));
+          return Center(
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Text(
+                'No books yet. Tap + Add book to create one.',
+                textAlign: TextAlign.center,
+                style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                      color: Colors.grey.shade600,
+                    ),
+              ),
+            ),
+          );
         }
         return RefreshIndicator(
           onRefresh: () async {
@@ -172,6 +257,23 @@ class _BooksScreenState extends State<BooksScreen> {
                 title: Text(
                   book.name,
                   style: const TextStyle(fontWeight: FontWeight.w600),
+                ),
+                trailing: PopupMenuButton<String>(
+                  icon: const Icon(Icons.more_vert),
+                  onSelected: (value) {
+                    if (value == 'edit') _openEditBook(book);
+                    if (value == 'delete') _confirmDelete(book);
+                  },
+                  itemBuilder: (context) => const [
+                    PopupMenuItem(
+                      value: 'edit',
+                      child: Text('Edit'),
+                    ),
+                    PopupMenuItem(
+                      value: 'delete',
+                      child: Text('Delete'),
+                    ),
+                  ],
                 ),
                 subtitle: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -206,21 +308,30 @@ class _BooksScreenState extends State<BooksScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final fab = FloatingActionButton.extended(
+      onPressed: _openAddBook,
+      icon: const Icon(Icons.add),
+      label: const Text('Add book'),
+    );
+
     if (widget.embedded) {
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 12, 20, 8),
-            child: Text(
-              'Catalog',
-              style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                    fontWeight: FontWeight.bold,
-                  ),
+      return Scaffold(
+        body: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 12, 20, 8),
+              child: Text(
+                'Catalog',
+                style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.bold,
+                    ),
+              ),
             ),
-          ),
-          Expanded(child: _booksBody()),
-        ],
+            Expanded(child: _booksBody()),
+          ],
+        ),
+        floatingActionButton: fab,
       );
     }
 
@@ -229,6 +340,7 @@ class _BooksScreenState extends State<BooksScreen> {
         title: const Text('Books'),
       ),
       body: _booksBody(),
+      floatingActionButton: fab,
     );
   }
 }
