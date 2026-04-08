@@ -381,18 +381,23 @@ class BookController extends BaseController
      */
     public function update(Request $request, $id)
     {
-        $validator = Validator::make($request->all(), [
-            'name' => 'required',
-            'description' => 'required',
-            'genre_id' => 'required',
-            'inventory_total_qty' => 'required|integer|min:1|gte:checked_qty'
-        ]);
+        $book = Book::findOrFail($id);
+
+        // `gte:checked_qty` compares to another attribute; the app does not send `checked_qty`.
+        // Use the persisted value so inventory_total_qty >= copies currently checked out.
+        $validator = Validator::make(
+            array_merge($request->all(), ['checked_qty' => $book->checked_qty]),
+            [
+                'name' => 'required',
+                'description' => 'required',
+                'genre_id' => 'required',
+                'inventory_total_qty' => 'required|integer|min:1|gte:checked_qty',
+            ]
+        );
 
         if ($validator->fails()) {
             return $this->sendError('Validation Error.', $validator->errors());
         }
-
-        $book = Book::findOrFail($id);
         $book->name = $request['name'];
         $book->description = $request['description'];
         $book->genre_id = $request['genre_id'];

@@ -24,7 +24,7 @@ class MyApp extends StatelessWidget {
   }
 }
 
-/// Debug/profile: [http://localhost:8000/api/]. Release: prompt once for API host IP, unless
+/// Debug/profile: Android emulator → 10.0.2.2; iOS simulator & others → localhost. Release: API host IP unless
 /// `--dart-define=API_BASE_URL=...` is set.
 class AppEntry extends StatefulWidget {
   const AppEntry({super.key});

@@ -6,7 +6,16 @@ const String _prefsKeyProductionIp = 'production_api_ip';
 /// `--dart-define=API_BASE_URL=https://example.com/api/` skips dev default and release IP prompt.
 const String _kApiUrlOverride = String.fromEnvironment('API_BASE_URL');
 
-const String _kDevDefaultBaseUrl = 'http://localhost:8000/api/';
+/// Debug/profile default when `API_BASE_URL` is unset.
+/// Android emulator → [10.0.2.2] (host loopback). iOS simulator / desktop / web → [localhost]
+/// (same machine as `php artisan serve`). Physical devices need `--dart-define` or release IP.
+String _devDefaultBaseUrl() {
+  if (kIsWeb) return 'http://localhost:8000/api/';
+  if (defaultTargetPlatform == TargetPlatform.android) {
+    return 'http://10.0.2.2:8000/api/';
+  }
+  return 'http://localhost:8000/api/';
+}
 
 /// Resolves the Laravel API base URL (with trailing slash).
 class ApiConfig {
@@ -32,7 +41,7 @@ class ApiConfig {
     }
 
     if (!kReleaseMode) {
-      _cached = _kDevDefaultBaseUrl;
+      _cached = _devDefaultBaseUrl();
       return _cached!;
     }
 
